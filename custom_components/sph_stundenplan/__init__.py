@@ -10,7 +10,7 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_CHILD_NAME, CONF_CHILD_SHORTCUT
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 CARD_URL = f"/api/{DOMAIN}/static/sph-stundenplan-card.js"
@@ -33,39 +33,24 @@ async def _register_lovelace_resource(hass: HomeAssistant) -> None:
             continue
         matched = True
         if url != CARD_URL or resource.get("res_type") != "module":
-            await resources.async_update_item(
-                resource["id"], {"url": CARD_URL, "res_type": "module"}
-            )
+            await resources.async_update_item(resource["id"], {"url": CARD_URL, "res_type": "module"})
     if not matched:
         await resources.async_create_item({"res_type": "module", "url": CARD_URL})
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Set up the SPH Stundenplan integration and its Lovelace card."""
     static_dir = Path(__file__).parent / "static"
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(f"/api/{DOMAIN}/static", str(static_dir), False)]
-    )
-
-    # Home Assistant 2026.x: explicitly add the JS module to the frontend.
-    # This mirrors the working KFG Vertretungsplan implementation and makes
-    # the custom element available even when Lovelace resources are managed
-    # automatically.
+    await hass.http.async_register_static_paths([StaticPathConfig(f"/api/{DOMAIN}/static", str(static_dir), False)])
     add_extra_js_url(hass, CARD_URL)
-
     if hass.is_running:
         hass.async_create_task(_register_lovelace_resource(hass))
     else:
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STARTED,
-            lambda _event: hass.async_create_task(_register_lovelace_resource(hass)),
-        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, lambda _event: hass.async_create_task(_register_lovelace_resource(hass)))
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .coordinator import SphTimetableCoordinator
-
     coordinator = SphTimetableCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
@@ -74,11 +59,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Migrate old entries that stored the now-unused class name."""
-    if config_entry.version < 2:
+    """Migrate entries and retain the new child identity fields."""
+    if config_entry.version < 3:
         data = dict(config_entry.data)
         data.pop("class_name", None)
-        hass.config_entries.async_update_entry(config_entry, data=data, version=2)
+        data.setdefault(CONF_CHILD_NAME, "")
+        data.setdefault(CONF_CHILD_SHORTCUT, "")
+        hass.config_entries.async_update_entry(config_entry, data=data, version=3)
     return True
 
 
