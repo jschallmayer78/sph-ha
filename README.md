@@ -10,7 +10,7 @@ Die Integration basiert technisch auf den Open-Source-Projekten von [lanis-mobil
 
 In Home Assistant **HACS → Integrationen** öffnen und über das Drei-Punkte-Menü **Benutzerdefinierte Repositories** auswählen.
 
-Als Repository eintragen:
+Repository:
 
 ```text
 https://github.com/leonsio/sph-ha
@@ -22,33 +22,26 @@ Kategorie:
 Integration
 ```
 
-Danach nach **Schulportal Hessen Stundenplan** suchen und die Integration installieren.
-
-Anschließend Home Assistant neu starten.
+Danach **Schulportal Hessen Stundenplan** installieren und Home Assistant neu starten.
 
 ### 2. Integration konfigurieren
 
-Nach dem Neustart unter:
+Unter **Einstellungen → Geräte & Dienste → Integration hinzufügen** nach **Schulportal Hessen** suchen.
 
-**Einstellungen → Geräte & Dienste → Integration hinzufügen**
-
-nach **Schulportal Hessen** suchen.
-
-Benötigt werden:
+Benötigt werden nur:
 
 - **Schulnummer**
 - **SPH-Benutzername**
 - **SPH-Passwort**
-- **Klasse**
 - **Aktualisierungsintervall**
+
+Eine Angabe der Klasse ist **nicht erforderlich**. Das Schülerkonto im Schulportal ist bereits einer Klasse zugeordnet. Die Integration liest den Stundenplan direkt aus `stundenplan.php` und übernimmt die vom SPH für dieses Konto bereitgestellten Pläne.
 
 ## Lovelace-Karte
 
-Die Lovelace-JavaScript-Ressource wird bei Home Assistant 2026.2+ automatisch durch die Integration registriert bzw. aktualisiert.
+Die Lovelace-JavaScript-Ressource wird bei Home Assistant 2026.2+ automatisch durch die Integration registriert bzw. aktualisiert. Eine manuelle `/local/...`-Ressource ist nicht erforderlich.
 
-Eine manuelle `/local/...`-Ressource ist daher **nicht erforderlich**.
-
-Die Karte kann anschließend beispielsweise so verwendet werden:
+Beispiel:
 
 ```yaml
 type: custom:sph-stundenplan-card
@@ -56,19 +49,25 @@ entity: sensor.schulportal_hessen_stundenplan
 title: Stundenplan
 ```
 
-Die Ressource wird intern über den statischen Pfad der Integration bereitgestellt.
+## Stundenplanquelle
+
+Die Implementierung folgt dem aktuellen Vorgehen von `liblanis`: Nach der Authentifizierung wird `https://start.schulportal.hessen.de/stundenplan.php` aufgerufen. Der Parser wertet dort die Tabellen `#all` und `#own` aus. Die aktuelle Referenzimplementierung macht ebenfalls keine Klassenangabe beim Abruf des Stundenplans. citeturn35file0turn36file0
+
+Damit ist die Klasse keine zusätzliche Filterinformation der Home-Assistant-Integration.
 
 ## Technische Umsetzung
 
 Die SPH-Kommunikation orientiert sich an `lanis-mobile/liblanis`:
 
-- SPH-Login und Session-Cookies
+- SPH-Login über die Login-Bootstrap-URL
 - RSA-Public-Key-Handschlag
 - RSA/PKCS#1-Verschlüsselung des Sitzungsschlüssels
 - AES-CBC/PKCS7 für verschlüsselte SPH-Inhalte
 - Stundenplanparser für die SPH-Tabellen
 - Unterstützung von `#all` und `#own`
 - Berücksichtigung von Unterrichtsfach, Lehrkraft, Raum, Badge, Uhrzeiten und Doppelstunden/`rowspan`
+
+Die aktuelle `liblanis`-Implementierung ruft den Stundenplan ebenfalls direkt über `stundenplan.php` ab und prüft anschließend auf `#all` bzw. `#own`. citeturn35file0turn36file0
 
 Referenzprojekte:
 
