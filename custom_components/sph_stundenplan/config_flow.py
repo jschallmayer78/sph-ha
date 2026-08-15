@@ -42,8 +42,6 @@ class SphConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class SphOptionsFlow(config_entries.OptionsFlow):
-    """Allow assigning a name/shortcut to an existing SPH account."""
-
     def __init__(self, config_entry):
         self.config_entry = config_entry
 
@@ -54,7 +52,6 @@ class SphOptionsFlow(config_entries.OptionsFlow):
             data[CONF_CHILD_SHORTCUT] = user_input[CONF_CHILD_SHORTCUT].strip()
             self.hass.config_entries.async_update_entry(self.config_entry, data=data)
             return self.async_create_entry(title="", data={})
-
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
