@@ -1,0 +1,10 @@
+DOMAIN = "sph_stundenplan"
+CONF_SCHOOL_ID = "school_id"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+CONF_CLASS = "class_name"
+CONF_UPDATE_INTERVAL = "update_interval"
+DEFAULT_UPDATE_INTERVAL = 15
+SPH_BASE = "https://start.schulportal.hessen.de"
+SPH_LOGIN = "https://login.schulportal.hessen.de/"
+SPH_CONNECT = "https://connect.schulportal.hessen.de"
