@@ -1,1 +1,19 @@
-{"config":{"step":{"user":{"title":"Schulportal Hessen","description":"SPH-Zugangsdaten und Klasse.","data":{"school_id":"Schulnummer","username":"Benutzername","password":"Passwort","class_name":"Klasse","update_interval":"Aktualisierungsintervall (Minuten)"}}},"error":{"invalid_school_id":"Die Schulnummer muss numerisch sein."}}}
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schulportal Hessen",
+        "description": "SPH-Zugangsdaten. Die Klasse wird vom Schulportal anhand des Schülerkontos bestimmt.",
+        "data": {
+          "school_id": "Schulnummer",
+          "username": "Benutzername",
+          "password": "Passwort",
+          "update_interval": "Aktualisierungsintervall (Minuten)"
+        }
+      }
+    },
+    "error": {
+      "invalid_school_id": "Die Schulnummer muss numerisch sein."
+    }
+  }
+}
