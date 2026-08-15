@@ -6,31 +6,13 @@ from homeassistant.components.sensor import SensorEntity
 
 from .const import CONF_CHILD_SHORTCUT, DOMAIN
 
-# SPH uses short subject codes. Unknown codes remain unchanged.
 SUBJECT_NAMES = {
-    "M": "Mathematik",
-    "D": "Deutsch",
-    "E": "Englisch",
-    "F": "Französisch",
-    "L": "Latein",
-    "G": "Geschichte",
-    "GE": "Geschichte",
-    "EK": "Erdkunde",
-    "POW": "Politik und Wirtschaft",
-    "PW": "Politik und Wirtschaft",
-    "PH": "Physik",
-    "CH": "Chemie",
-    "BIO": "Biologie",
-    "SP": "Sport",
-    "MU": "Musik",
-    "ETH": "Ethik",
-    "RKA": "Religion katholisch",
-    "REV": "Religion evangelisch",
-    "RELI": "Religion",
-    "INF": "Informatik",
-    "KU": "Kunst",
-    "LRS": "Lese-Rechtschreib-Schwäche",
-    "PW": "Politik und Wirtschaft",
+    "M": "Mathematik", "D": "Deutsch", "E": "Englisch", "F": "Französisch",
+    "L": "Latein", "G": "Geschichte", "GE": "Geschichte", "EK": "Erdkunde",
+    "POW": "Politik und Wirtschaft", "PW": "Politik und Wirtschaft", "PH": "Physik",
+    "CH": "Chemie", "BIO": "Biologie", "SP": "Sport", "MU": "Musik",
+    "ETH": "Ethik", "RKA": "Religion katholisch", "REV": "Religion evangelisch",
+    "RELI": "Religion", "INF": "Informatik", "KU": "Kunst", "LRS": "Lese-Rechtschreib-Schwäche",
 }
 
 
@@ -45,17 +27,11 @@ def subject_name(subject):
         base = SUBJECT_NAMES.get(code.upper())
         if base:
             return f"{base} {number}{suffix}"
-    base = SUBJECT_NAMES.get(value.upper())
-    if base:
-        return base
-    return value
+    return SUBJECT_NAMES.get(value.upper(), value)
 
 
 def enrich_days(days):
-    return [
-        [dict(lesson, fach=subject_name(lesson.get("subject"))) for lesson in day]
-        for day in (days or [])
-    ]
+    return [[dict(lesson, fach=subject_name(lesson.get("subject"))) for lesson in day] for day in (days or [])]
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -70,9 +46,9 @@ class SphTimetableSensor(SensorEntity):
         self.coordinator = coordinator
         self.entry = entry
         self._attr_unique_id = f"{entry.entry_id}_timetable"
-        shortcut = entry.data.get(CONF_CHILD_SHORTCUT, "").strip()
-        self.child_shortcut = shortcut
-        self._attr_name = f"Stundenplan {shortcut}" if shortcut else "Stundenplan"
+        self.child_shortcut = entry.data.get(CONF_CHILD_SHORTCUT, "").strip()
+        # Existing entries without a shortcut remain selectable by their entity ID.
+        self._attr_name = f"Stundenplan {self.child_shortcut}" if self.child_shortcut else "Stundenplan"
 
     @property
     def native_value(self):
