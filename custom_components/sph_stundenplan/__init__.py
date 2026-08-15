@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.config_entries import ConfigEntry
@@ -40,10 +41,18 @@ async def _register_lovelace_resource(hass: HomeAssistant) -> None:
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the SPH Stundenplan integration and its Lovelace card."""
     static_dir = Path(__file__).parent / "static"
     await hass.http.async_register_static_paths(
         [StaticPathConfig(f"/api/{DOMAIN}/static", str(static_dir), False)]
     )
+
+    # Home Assistant 2026.x: explicitly add the JS module to the frontend.
+    # This mirrors the working KFG Vertretungsplan implementation and makes
+    # the custom element available even when Lovelace resources are managed
+    # automatically.
+    add_extra_js_url(hass, CARD_URL)
+
     if hass.is_running:
         hass.async_create_task(_register_lovelace_resource(hass))
     else:
