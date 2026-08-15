@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import random
 import re
 from html import unescape
@@ -11,6 +12,8 @@ from bs4 import BeautifulSoup
 
 from .const import SPH_BASE, SPH_LOGIN, SPH_CONNECT
 
+_LOGGER = logging.getLogger(__name__)
+
 
 class SphClient:
     """SPH client following the current lanis-mobile/liblanis protocol."""
@@ -18,7 +21,7 @@ class SphClient:
     def __init__(self, school_id, username, password):
         self.school_id, self.username, self.password = str(school_id), username, password
         self.session = requests.Session()
-        self.session.headers["User-Agent"] = "Home Assistant SPH Stundenplan/0.2.2"
+        self.session.headers["User-Agent"] = "Home Assistant SPH Stundenplan/0.2.3"
         self.key = None
 
     @staticmethod
@@ -45,10 +48,7 @@ class SphClient:
         if len(payload) < 16 or payload[:8] != b"Salted__":
             return None
         k = cls._kdf(payload[8:16], key)
-        return unpad(
-            AES.new(k[:32], AES.MODE_CBC, k[32:48]).decrypt(payload[16:]),
-            AES.block_size,
-        )
+        return unpad(AES.new(k[:32], AES.MODE_CBC, k[32:48]).decrypt(payload[16:]), AES.block_size)
 
     def _decrypt_tags(self, html):
         if not self.key:
@@ -59,95 +59,79 @@ class SphClient:
                 data = self._decrypt(base64.b64decode(match.group(1)), self.key)
                 return data.decode("utf-8") if data else ""
             except Exception:
+                _LOGGER.debug("SPH: konnte einen verschlüsselten Seitenbereich nicht entschlüsseln", exc_info=True)
                 return ""
 
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
-        """Perform the SPH login bootstrap and return its final login URL.
-
-        liblanis deliberately performs this bootstrap in a temporary HTTP
-        session. The resulting redirect URL is then opened by the authenticated
-        session. This is important: simply POSTing credentials and requesting
-        connect.schulportal.hessen.de does not establish the same SPH session.
-        """
+        """Perform the SPH login bootstrap and return its final login URL."""
+        _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s", self.school_id)
         bootstrap = requests.Session()
         bootstrap.headers["User-Agent"] = self.session.headers["User-Agent"]
         response = bootstrap.post(
             f"{SPH_LOGIN}?i={self.school_id}",
-            data={
-                "user": f"{self.school_id}.{self.username}",
-                "user2": self.username,
-                "password": self.password,
-            },
+            data={"user":f"{self.school_id}.{self.username}","user2":self.username,"password":self.password},
             allow_redirects=False,
             timeout=15,
         )
+        _LOGGER.debug("SPH: Login-Request HTTP %s", response.status_code)
         if response.status_code == 503:
             raise RuntimeError("Schulportal Hessen ist nicht verfügbar.")
-
-        if not response.headers.get("Location"):
+        location = response.headers.get("Location")
+        if not location:
+            _LOGGER.warning("SPH: Login fehlgeschlagen; keine Weiterleitung erhalten (HTTP %s)", response.status_code)
             raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
+        _LOGGER.debug("SPH: Login-Weiterleitung erhalten")
 
-        connect = bootstrap.get(
-            SPH_CONNECT,
-            allow_redirects=False,
-            timeout=15,
-        )
+        connect = bootstrap.get(SPH_CONNECT, allow_redirects=False, timeout=15)
+        _LOGGER.debug("SPH: Connect-Request HTTP %s", connect.status_code)
         login_url = connect.headers.get("Location")
         if not login_url:
+            _LOGGER.warning("SPH: Connect-Weiterleitung fehlt (HTTP %s)", connect.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         return login_url
 
     def login(self):
         login_url = self._get_login_url()
         response = self.session.get(login_url, allow_redirects=False, timeout=15)
+        _LOGGER.debug("SPH: Login-URL HTTP %s", response.status_code)
         if response.status_code not in (200, 302):
+            _LOGGER.warning("SPH: authentifizierte Login-URL lieferte HTTP %s", response.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
+        _LOGGER.debug("SPH: Login erfolgreich")
         self._handshake()
 
     def _handshake(self):
         _, PKCS1_v1_5, RSA, get_random_bytes, _ = self._crypto()
-        response = self.session.post(
-            f"{SPH_BASE}/ajax.php",
-            params={"f": "rsaPublicKey"},
-            timeout=15,
-        )
+        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f":"rsaPublicKey"}, timeout=15)
+        _LOGGER.debug("SPH: RSA-Public-Key HTTP %s", response.status_code)
         response.raise_for_status()
         public_key = RSA.import_key(response.json()["publickey"])
         self.key = get_random_bytes(46)
         encrypted = PKCS1_v1_5.new(public_key).encrypt(self.key)
-        response = self.session.post(
-            f"{SPH_BASE}/ajax.php",
-            params={"f": "rsaHandshake", "s": random.randrange(2000)},
-            data={"key": base64.b64encode(encrypted).decode()},
-            timeout=15,
-        )
+        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f":"rsaHandshake","s":random.randrange(2000)}, data={"key":base64.b64encode(encrypted).decode()}, timeout=15)
+        _LOGGER.debug("SPH: RSA-Handshake HTTP %s", response.status_code)
         response.raise_for_status()
         challenge = base64.b64decode(response.json()["challenge"])
         if self._decrypt(challenge, self.key) != self.key:
             self.key = None
+            _LOGGER.warning("SPH: RSA/AES-Handshake konnte nicht verifiziert werden")
             raise RuntimeError("SPH RSA/AES-Handshake fehlgeschlagen.")
+        _LOGGER.debug("SPH: RSA/AES-Handshake erfolgreich")
 
     def get_timetable(self):
-        # Always verify the login/session by performing the same login bootstrap
-        # used by liblanis. Cookie presence alone is not a reliable auth check.
         self.login()
-
-        response = self.session.get(
-            f"{SPH_BASE}/stundenplan.php",
-            allow_redirects=False,
-            timeout=20,
-        )
+        _LOGGER.debug("SPH: rufe Stundenplan-Seite ab")
+        response = self.session.get(f"{SPH_BASE}/stundenplan.php", allow_redirects=False, timeout=20)
+        _LOGGER.debug("SPH: stundenplan.php HTTP %s", response.status_code)
         if response.status_code == 302:
             location = response.headers.get("Location")
             if not location:
                 raise RuntimeError("Keine SPH-Weiterleitung für Stundenplan.")
-            response = self.session.get(
-                location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}",
-                allow_redirects=False,
-                timeout=20,
-            )
+            _LOGGER.debug("SPH: Stundenplan-Weiterleitung erhalten")
+            response = self.session.get(location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}", allow_redirects=False, timeout=20)
+            _LOGGER.debug("SPH: weitergeleitete Stundenplan-Seite HTTP %s", response.status_code)
         response.raise_for_status()
 
         html = self._decrypt_tags(response.text)
@@ -155,19 +139,15 @@ class SphClient:
         badge = soup.select_one("#aktuelleWoche")
         all_table = soup.select_one("#all tbody")
         own_table = soup.select_one("#own tbody")
+        _LOGGER.debug("SPH: Stundenplan gefunden: #all=%s, #own=%s, verschlüsselte Bereiche=%s", bool(all_table), bool(own_table), "<encoded>" in response.text)
 
         if all_table is None and own_table is None:
-            raise RuntimeError(
-                "Kein Stundenplan für dieses Konto verfügbar. "
-                "Die SPH-Anmeldung war erfolgreich, aber stundenplan.php "
-                "enthält weder #all noch #own."
-            )
+            _LOGGER.warning("SPH: Login/Handshake erfolgreich, aber stundenplan.php enthält weder #all noch #own")
+            raise RuntimeError("Kein Stundenplan für dieses Konto verfügbar. Die SPH-Anmeldung war erfolgreich, aber stundenplan.php enthält weder #all noch #own.")
 
-        return {
-            "week_badge": badge.get_text(" ", strip=True) if badge else None,
-            "all": self._parse(all_table) if all_table else [],
-            "own": self._parse(own_table) if own_table else [],
-        }
+        timetable = {"week_badge":badge.get_text(" ",strip=True) if badge else None,"all":self._parse(all_table) if all_table else [],"own":self._parse(own_table) if own_table else []}
+        _LOGGER.debug("SPH: Stundenplan erfolgreich geparst")
+        return timetable
 
     @staticmethod
     def _parse(tbody):
@@ -184,56 +164,24 @@ class SphClient:
                 parts = [x.strip() for x in element.get_text(" ", strip=True).split(" - ")]
                 if len(parts) == 2:
                     slots.append((parts[0], parts[1]))
-
         first = rows[0].find_all(["td", "th"], recursive=False)
         offset = bool(first and first[0].get_text(strip=True))
-
         for y, row in enumerate(rows):
-            if y == 0:
-                continue
+            if y == 0: continue
             for x, cell in enumerate(row.find_all(["td", "th"], recursive=False)):
-                if x == 0:
-                    continue
+                if x == 0: continue
                 span = int(cell.get("rowspan", "1") or "1")
                 day = x - 1
-                while day < day_count and occupied[y][day]:
-                    day += 1
-                if day >= day_count:
-                    continue
+                while day < day_count and occupied[y][day]: day += 1
+                if day >= day_count: continue
                 for i in range(span):
-                    if y + i < len(occupied):
-                        occupied[y + i][day] = True
-
+                    if y+i < len(occupied): occupied[y+i][day] = True
                 for lesson in cell.select(".stunde"):
-                    b = lesson.select_one("b")
-                    sm = lesson.select_one("small")
-                    bd = lesson.select_one(".badge")
-                    subject = b.get_text(" ", strip=True) if b else None
-                    teacher = sm.get_text(" ", strip=True) if sm else None
-                    badge = bd.get_text(" ", strip=True) if bd else None
-                    room = unescape(
-                        " ".join(
-                            n.strip()
-                            for n in lesson.find_all(string=True, recursive=False)
-                            if n.strip()
-                        )
-                    )
-                    duration = int(lesson.parent.get("rowspan", "1") or "1")
-                    start_index = y if offset else y - 1
-                    end_index = start_index + duration - 1
-                    start = slots[start_index][0] if 0 <= start_index < len(slots) else "00:00"
-                    end = slots[end_index][1] if 0 <= end_index < len(slots) else "00:00"
-                    result[day].append(
-                        {
-                            "day": day,
-                            "subject": subject,
-                            "teacher": teacher,
-                            "room": room,
-                            "badge": badge,
-                            "duration": duration,
-                            "start": start,
-                            "end": end,
-                            "index": y,
-                        }
-                    )
+                    b,sm,bd=lesson.select_one("b"),lesson.select_one("small"),lesson.select_one(".badge")
+                    subject=b.get_text(" ",strip=True) if b else None; teacher=sm.get_text(" ",strip=True) if sm else None; badge=bd.get_text(" ",strip=True) if bd else None
+                    room=unescape(" ".join(n.strip() for n in lesson.find_all(string=True,recursive=False) if n.strip()))
+                    duration=int(lesson.parent.get("rowspan","1") or "1")
+                    si=y if offset else y-1; ei=si+duration-1
+                    start=slots[si][0] if 0<=si<len(slots) else "00:00"; end=slots[ei][1] if 0<=ei<len(slots) else "00:00"
+                    result[day].append({"day":day,"subject":subject,"teacher":teacher,"room":room,"badge":badge,"duration":duration,"start":start,"end":end,"index":y})
         return result
