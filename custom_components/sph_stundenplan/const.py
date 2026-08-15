@@ -3,6 +3,7 @@ CONF_SCHOOL_ID = "school_id"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_UPDATE_INTERVAL = "update_interval"
+CONF_CHILD_SHORTCUT = "child_shortcut"
 DEFAULT_UPDATE_INTERVAL = 15
 SPH_BASE = "https://start.schulportal.hessen.de"
 SPH_LOGIN = "https://login.schulportal.hessen.de/"
