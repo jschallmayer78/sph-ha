@@ -4,7 +4,7 @@ import re
 
 from homeassistant.components.sensor import SensorEntity
 
-from .const import CONF_CHILD_SHORTCUT, DOMAIN
+from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, DOMAIN
 
 SUBJECT_NAMES = {
     "M": "Mathematik", "D": "Deutsch", "E": "Englisch", "F": "Französisch",
@@ -45,10 +45,17 @@ class SphTimetableSensor(SensorEntity):
     def __init__(self, coordinator, entry):
         self.coordinator = coordinator
         self.entry = entry
-        self._attr_unique_id = f"{entry.entry_id}_timetable"
+        self.child_name = entry.data.get(CONF_CHILD_NAME, "").strip()
         self.child_shortcut = entry.data.get(CONF_CHILD_SHORTCUT, "").strip()
-        # Existing entries without a shortcut remain selectable by their entity ID.
-        self._attr_name = f"Stundenplan {self.child_shortcut}" if self.child_shortcut else "Stundenplan"
+        self._attr_unique_id = f"{entry.entry_id}_timetable"
+        if self.child_name and self.child_shortcut:
+            self._attr_name = f"Stundenplan {self.child_name} ({self.child_shortcut})"
+        elif self.child_name:
+            self._attr_name = f"Stundenplan {self.child_name}"
+        elif self.child_shortcut:
+            self._attr_name = f"Stundenplan {self.child_shortcut}"
+        else:
+            self._attr_name = "Stundenplan"
 
     @property
     def native_value(self):
@@ -58,7 +65,7 @@ class SphTimetableSensor(SensorEntity):
     def extra_state_attributes(self):
         data = self.coordinator.data or {}
         return {
-            "kind": self.child_shortcut,
+            "kind": self.child_name,
             "kind_kürzel": self.child_shortcut,
             "wochenkennung": data.get("week_badge"),
             "tage": enrich_days(data.get("all", [])),
