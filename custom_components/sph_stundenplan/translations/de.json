@@ -3,8 +3,10 @@
     "step": {
       "user": {
         "title": "Schulportal Hessen",
-        "description": "SPH-Zugangsdaten. Die Klasse wird vom Schulportal anhand des Schülerkontos bestimmt.",
+        "description": "SPH-Zugangsdaten. Die Klasse wird vom Schulportal anhand des Schülerkontos bestimmt. Bei mehreren Kindern kannst du hier Name und Kürzel des Kindes festlegen.",
         "data": {
+          "child_name": "Name des Kindes",
+          "child_shortcut": "Kürzel des Kindes",
           "school_id": "Schulnummer",
           "username": "Benutzername",
           "password": "Passwort",
@@ -13,7 +15,20 @@
       }
     },
     "error": {
-      "invalid_school_id": "Die Schulnummer muss numerisch sein."
+      "invalid_school_id": "Die Schulnummer muss numerisch sein.",
+      "invalid_child": "Name und Kürzel des Kindes dürfen nicht leer sein."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kind konfigurieren",
+        "description": "Name und Kürzel des Kindes für diesen Stundenplan festlegen.",
+        "data": {
+          "child_name": "Name des Kindes",
+          "child_shortcut": "Kürzel des Kindes"
+        }
+      }
     }
   }
 }
