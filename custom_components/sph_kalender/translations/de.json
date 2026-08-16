@@ -1,0 +1,23 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schulkalender hinzufügen",
+        "description": "Verwende ein bereits eingerichtetes Schulportal-Hessen-Konto. Die Zugangsdaten werden nicht erneut gespeichert.",
+        "data": {
+          "source_entry": "Schulportal-Konto"
+        }
+      },
+      "init": {
+        "title": "Schulkalender konfigurieren",
+        "data": {
+          "source_entry": "Schulportal-Konto"
+        }
+      }
+    },
+    "abort": {
+      "no_timetable_account": "Richte zuerst mindestens ein Schulportal-Hessen-Stundenplankonto ein.",
+      "invalid_account": "Das ausgewählte Schulportal-Konto wurde nicht gefunden."
+    }
+  }
+}

@@ -1,59 +1,43 @@
-# Schulportal Hessen Stundenplan für Home Assistant
+# Schulportal Hessen Stundenplan und Kalender für Home Assistant
 
-Home Assistant Custom Integration für den persönlichen Stundenplan aus dem **Schulportal Hessen (SPH)**.
+Home Assistant Custom Integration für den persönlichen Stundenplan und Schulkalender aus dem **Schulportal Hessen (SPH)**.
 
 Die Integration basiert technisch auf den Open-Source-Projekten von [lanis-mobile](https://github.com/lanis-mobile), insbesondere `liblanis`, `LanisAPI` und `Lanis-mobile`.
 
 ## Installation über HACS
 
-### 1. Repository zu HACS hinzufügen
-
-In Home Assistant **HACS → Integrationen** öffnen und über das Drei-Punkte-Menü **Benutzerdefinierte Repositories** auswählen.
-
-Repository:
+In **HACS → Integrationen → Benutzerdefinierte Repositories** dieses Repository hinzufügen:
 
 ```text
 https://github.com/leonsio/sph-ha
 ```
 
-Kategorie:
+Kategorie: `Integration`
 
-```text
-Integration
-```
+Das Repository enthält mehrere Home-Assistant-Integrationen. HACS installiert sie gemeinsam; die Komponenten können anschließend unabhängig voneinander konfiguriert werden.
 
-Danach **Schulportal Hessen Stundenplan** installieren und Home Assistant neu starten.
-
-### 2. Integration konfigurieren
+## Stundenplan
 
 Unter **Einstellungen → Geräte & Dienste → Integration hinzufügen** nach **Schulportal Hessen Stundenplan** suchen.
 
 Für jedes Schülerkonto werden benötigt:
 
-- **Schulnummer**
-- **SPH-Benutzername**
-- **SPH-Passwort**
-- **Kind / Anzeigename** – frei wählbarer Name, z. B. `Maxim`
-- **Kind-Kürzel** – kurzes eindeutiges Kürzel, z. B. `Mk`
-- **Aktualisierungsintervall**
+- Schulnummer
+- SPH-Benutzername
+- SPH-Passwort
+- Kind / Anzeigename
+- Kind-Kürzel
+- Aktualisierungsintervall
 
-Eine Angabe der Klasse ist **nicht erforderlich**. Jedes Schülerkonto ist im Schulportal bereits genau einer Klasse bzw. einem persönlichen Stundenplan zugeordnet. Die Integration liest den Stundenplan direkt aus `stundenplan.php` und übernimmt den vom SPH für dieses Konto bereitgestellten persönlichen Plan.
+Eine Angabe der Klasse ist **nicht erforderlich**. Das Schülerkonto ist im Schulportal bereits einem persönlichen Stundenplan zugeordnet.
 
-Es können **mehrere Schülerkonten/Kinder** eingerichtet werden. Für jedes Konto wird ein eigener Sensor angelegt, dessen Entity-ID den Kind-Namen bzw. das Kind-Kürzel enthält, z. B.:
+Beispiel:
 
 ```text
 sensor.stundenplan_maxim_mk
 ```
 
-Damit können mehrere Kinder mit unterschiedlichen SPH-Zugangsdaten unabhängig voneinander in einem Home-Assistant-System verwendet werden.
-
-## Lovelace-Karte
-
-Die Lovelace-JavaScript-Ressource wird bei Home Assistant **2026.2+** automatisch durch die Integration registriert bzw. aktualisiert. Die Ressource verwendet die von Home Assistant bereitgestellte `add_extra_js_url()`-Methode. Eine manuelle `/local/...`-Ressource ist daher nicht erforderlich.
-
-Die Karte zeigt ausschließlich den **persönlichen Stundenplan** aus `eigener_plan`.
-
-### Beispiel
+Die Karte zeigt ausschließlich `eigener_plan`.
 
 ```yaml
 type: custom:sph-stundenplan-card
@@ -61,147 +45,87 @@ entity: sensor.stundenplan_maxim_mk
 title: Stundenplan Maxim
 ```
 
-`entity` ist optional, wenn die Karte über ein Kind-Kürzel konfiguriert werden soll. Die explizite Angabe des Sensors wird empfohlen, insbesondere wenn mehrere Kinder eingerichtet sind.
+Die Integration löst Fachkürzel auf, berücksichtigt Badges in Klammern und kann alternative A/B-Wochenstunden nebeneinander darstellen.
 
-### Kartenparameter
+## Schulkalender
 
-| Parameter | Erforderlich | Beschreibung |
-|---|---|---|
-| `type` | ja | Muss `custom:sph-stundenplan-card` sein |
-| `entity` | empfohlen | Sensor des gewünschten Kindes, z. B. `sensor.stundenplan_maxim_mk` |
-| `title` | nein | Eigener Titel der Karte |
-| `child` | nein | Kind-Kürzel zur automatischen Auswahl des passenden Sensors |
+Zusätzlich enthält das Repository die eigenständige Integration **Schulportal Hessen Kalender** (`sph_kalender`). Sie erzeugt einen Sensor mit den persönlichen Schulkalender-Terminen des Kindes.
 
-### Darstellung von Fächern und Gruppen
+Wichtig: **Die Zugangsdaten werden für den Kalender nicht erneut abgefragt oder gespeichert.** Beim Einrichten des Kalenders wird ein bereits eingerichtetes **Schulportal Hessen Stundenplan-Konto** ausgewählt. Dadurch werden dessen Schulnummer, Benutzername und Passwort wiederverwendet. Wenn die Stundenplan-Komponente bereits läuft, verwendet der Kalender außerdem deren `SphClient` und damit dieselbe Sitzung.
 
-Die Integration versucht, die SPH-Fachkürzel in verständliche Fachnamen umzuwandeln. Beispiele:
+### Einrichtung
 
-- `M` → **Mathematik**
-- `D` → **Deutsch**
-- `E1` → **Englisch 1**
-- `F2` → **Französisch 2**
-- `L2` → **Latein 2**
-- `GE` → **Geschichte**
-- `PH` → **Physik**
-- `CH` → **Chemie**
-- `BIO` → **Biologie**
-- `PW` → **Politik und Wirtschaft**
-- `ETH` → **Ethik**
-- `RKA` → **Religion katholisch**
-- `REV` → **Religion evangelisch**
-- `SP` → **Sport**
+1. Zuerst mindestens ein Kind unter **Schulportal Hessen Stundenplan** einrichten.
+2. Danach **Schulportal Hessen Kalender** als neue Integration hinzufügen.
+3. Das gewünschte vorhandene Schulportal-Konto auswählen.
+4. Home Assistant erzeugt den persönlichen Kalender-Sensor für dieses Kind.
 
-Dabei wird eine Zahl am Fachkürzel als mögliche Fach-/Gruppenkennung beibehalten. `F2` wird beispielsweise zu **Französisch 2**.
-
-Zusätzlich können die vom SPH gelieferten **Badges** wichtige Angaben zur Gültigkeit einer Stunde enthalten, etwa bei einem Unterricht, der nur in einer bestimmten Woche stattfindet. Diese werden in der Karte **in Klammern** angezeigt, damit sie eindeutig von der Fach-/Gruppenbezeichnung unterschieden werden:
+Beispiel:
 
 ```text
-Französisch 2 (A)
+sensor.schulkalender_maxim
 ```
 
-Ohne Badge erscheint lediglich:
-
-```text
-Französisch 2
-```
-
-Die Karte zeigt außerdem Uhrzeit, Lehrkraft und Raum an.
-
-## Sensorattribute
-
-Der jeweilige Stundenplansensor enthält unter anderem:
+Die Sensorattribute enthalten die normalisierten Termine:
 
 ```yaml
 kind: Maxim
-kind_kürzel: Mk
-wochenkennung: A
-tage: ...
-eigener_plan: ...
+termine:
+  - uid: ...
+    summary: Elternabend
+    description: ...
+    location: Raum 153
+    start: "2026-08-20T19:00:00"
+    end: "2026-08-20T20:30:00"
+    all_day: false
 ```
 
-`tage` enthält den vom SPH bereitgestellten Stundenplan, während `eigener_plan` den **persönlichen Stundenplan des Schülerkontos** enthält. Die Lovelace-Karte verwendet ausschließlich `eigener_plan`.
+Der Sensorzustand ist die Anzahl der aktuell abgerufenen Termine. Der Zeitraum umfasst standardmäßig die vergangenen 31 Tage bis 365 Tage in die Zukunft.
 
-Ein einzelner Unterrichtseintrag kann beispielsweise so aussehen:
+### Warum iCalendar?
 
-```yaml
-- day: 0
-  subject: F2
-  fach: Französisch 2
-  teacher: Drg
-  room: "157"
-  badge: A
-  duration: 2
-  start: "07:55"
-  end: "09:25"
-  index: 1
-```
+Der Schulkalender bietet einen iCal/ICS-Export. Dieser wird verwendet, damit der Kalender nicht aus der visuellen Monatsansicht rekonstruiert werden muss und die vom Schulportal für das Benutzerkonto bereitgestellte Auswahl an Terminen erhalten bleibt.
 
-Das Badge `A` wird in der Karte als **(A)** dargestellt.
+## Lovelace-Ressourcen
 
-## Stundenplanquelle
-
-Die Implementierung folgt dem aktuellen Vorgehen von `liblanis`: Nach der Authentifizierung wird `https://start.schulportal.hessen.de/stundenplan.php` aufgerufen. Der Parser wertet dort die Tabellen `#all` und `#own` aus. Die Klasse wird dabei nicht als zusätzlicher Parameter benötigt.
-
-Damit ist die Klasse keine zusätzliche Filterinformation der Home-Assistant-Integration.
+Die Stundenplan-Karten werden für **Home Assistant 2026.2+** automatisch über `add_extra_js_url()` bereitgestellt und zusätzlich in der Lovelace-Ressourcensammlung verwaltet. Eine manuelle `/local/...`-Ressource ist nicht erforderlich.
 
 ## Technische Umsetzung
 
-Die SPH-Kommunikation orientiert sich an `lanis-mobile/liblanis`:
+Die SPH-Kommunikation orientiert sich an den genannten Lanis-Projekten:
 
-- SPH-Login über die Login-Bootstrap-URL
-- RSA-Public-Key-Handschlag
-- RSA/PKCS#1-Verschlüsselung des Sitzungsschlüssels
-- AES-CBC/PKCS7 für verschlüsselte SPH-Inhalte
-- Stundenplanparser für die SPH-Tabellen
-- Unterstützung von `#all` und `#own`
-- Berücksichtigung von Unterrichtsfach, Lehrkraft, Raum, Badge, Uhrzeiten und Doppelstunden/`rowspan`
+- Login über das aktuelle SPH-Login-System
+- RSA/AES-Handschlag
+- Entschlüsselung von `<encoded>`-Bereichen
+- Stundenplan über `stundenplan.php`
 - persönlicher Stundenplan über `#own`
+- persönlicher Schulkalender über den authentifizierten iCal-Export von `kalender.php`
+- Parsing von iCalendar-Events einschließlich Ganztagsterminen, Beschreibung und Ort
+- Netzwerkzugriffe laufen außerhalb des Home-Assistant-Event-Loops
 
-Referenzprojekte:
+## Mehrere Kinder
 
-- https://github.com/lanis-mobile/liblanis
-- https://github.com/lanis-mobile/LanisAPI
-- https://github.com/lanis-mobile/Lanis-mobile
-
-## Home Assistant
-
-Die Integration ist für **Home Assistant 2026.2 und neuer** vorgesehen.
-
-Die Lovelace-Ressource wird automatisch verwaltet. Nach einer Aktualisierung der Integration kann ein Neustart von Home Assistant erforderlich sein, damit die aktuelle Version der Karte geladen wird.
+Für mehrere Kinder werden mehrere Stundenplan-Konten eingerichtet. Für jedes Konto kann anschließend ein eigener Kalender angelegt werden. Der Kalender speichert nur die Referenz auf den zugehörigen Stundenplan-Config-Entry und damit **keine zusätzlichen Zugangsdaten**.
 
 ## Fehlerbehebung
 
 ### „Custom element not found: sph-stundenplan-card“
 
-Prüfe zunächst, ob die Integration vollständig geladen wurde und die Lovelace-Ressource automatisch registriert wurde. Danach Home Assistant neu starten und den Browser bzw. die Home-Assistant-App neu laden.
+Integration vollständig laden, Home Assistant neu starten und Browser/App neu laden. Die Karten-Ressourcen werden durch die Integration registriert; keine zusätzliche manuelle Ressource anlegen.
 
-Eine zusätzliche manuelle Lovelace-Ressource sollte **nicht** angelegt werden, da die Integration die Ressource selbst über `add_extra_js_url()` registriert.
+### Kalender lässt sich nicht einrichten
 
-### „Kein Stundenplan für dieses Konto verfügbar“
+Es muss zuerst mindestens ein **Schulportal Hessen Stundenplan**-Eintrag existieren. Der Kalender verwendet bewusst ein bestehendes Konto, damit die Zugangsdaten nicht doppelt gespeichert werden.
 
-Die Integration benötigt keine Klassenangabe. Prüfe stattdessen:
+### „Der persönliche Schulkalender konnte nicht als iCal abgerufen werden“
 
-1. ob die SPH-Anmeldung erfolgreich ist,
-2. ob das verwendete Konto ein Schülerkonto ist,
-3. ob der Stundenplan im Schulportal für dieses Konto angezeigt wird,
-4. ob Schulnummer, Benutzername und Passwort korrekt sind.
-
-### Mehrere Kinder
-
-Für jedes Kind sollte eine eigene Integration bzw. ein eigener Config-Entry mit dessen SPH-Zugangsdaten angelegt werden. Verwende unterschiedliche Kind-Namen und Kürzel. Dadurch entstehen separate Sensoren, beispielsweise:
-
-```text
-sensor.stundenplan_maxim_mk
-sensor.stundenplan_lena_lk
-```
-
-In der Karte wird anschließend der gewünschte Sensor über `entity` angegeben.
+Prüfe, ob das ausgewählte Konto den Schulkalender im Schulportal öffnen kann. Der Schulkalender ist ein separates PaedOrg-Modul und kann schulabhängig aktiviert bzw. konfiguriert sein.
 
 ## Sicherheit
 
-Das SPH-Passwort wird als Config-Entry-Daten von Home Assistant gespeichert und nicht als Sensorattribut veröffentlicht.
+SPH-Zugangsdaten werden als Config-Entry-Daten des Stundenplan-Kontos gespeichert und nicht als Sensorattribute veröffentlicht. Der Kalender legt keine Kopie des Passworts an.
 
-Bitte niemals Zugangsdaten oder vollständige Login-/Debug-Logs in Issues veröffentlichen.
+Bitte niemals Zugangsdaten oder vollständige Debug-Logs in Issues veröffentlichen.
 
 ## Hinweis
 
