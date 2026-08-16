@@ -16,8 +16,32 @@ class SphStundenplanCard extends HTMLElement {
     const title = this.config.title || (child ? `Stundenplan – ${child}` : "Stundenplan");
 
     this.shadowRoot.innerHTML = `<style>
-      :host{display:block}.content{padding:12px 16px}section{margin-bottom:16px}h3{margin:0 0 8px}.lesson{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider-color)}.time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}.main small{color:var(--secondary-text-color)}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}.empty{color:var(--secondary-text-color)}.error{padding:16px;color:var(--error-color)}
-    </style><ha-card header="${this._escape(title)}"><div class="content">${entity ? days.slice(0,5).map((day,i)=>`<section><h3>${names[i]}</h3>${day.length ? day.map(x=>`<div class="lesson"><span class="time">${this._escape(x.start)}–${this._escape(x.end)}</span><span class="main"><b>${this._escape(x.fach || x.subject || "Unterricht")}</b>${this._renderBadges(x.badge)}<small>${this._escape(x.teacher || "")}${x.room ? " · " + this._escape(x.room) : ""}</small></span></div>`).join("") : `<span class="empty">Kein Unterricht</span>`}</section>`).join("") : `<div class="error">Kein passender Stundenplan gefunden.</div>`}</div></ha-card>`;
+      :host{display:block}.content{padding:12px 16px}section{margin-bottom:16px}h3{margin:0 0 8px}.lesson{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider-color)}.lesson-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1}.lesson-option{min-width:0}.time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}.main small{color:var(--secondary-text-color)}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}.empty{color:var(--secondary-text-color)}.error{padding:16px;color:var(--error-color)}
+    </style><ha-card header="${this._escape(title)}"><div class="content">${entity ? days.slice(0,5).map((day,i)=>`<section><h3>${names[i]}</h3>${this._renderDay(day)}</section>`).join("") : `<div class="error">Kein passender Stundenplan gefunden.</div>`}</div></ha-card>`;
+  }
+
+  _renderDay(day) {
+    if (!day || !day.length) return `<span class="empty">Kein Unterricht</span>`;
+
+    // Unterricht mit identischer Start-/Endzeit wird als gemeinsamer Block
+    // dargestellt. Das ist insbesondere für A/B-Wochen wichtig, wenn zwei
+    // Fächer dieselbe Zeit belegen.
+    const groups = [];
+    const byTime = new Map();
+    for (const lesson of day) {
+      const key = `${lesson.start || ""}|${lesson.end || ""}`;
+      if (!byTime.has(key)) {
+        const group = { start: lesson.start || "", end: lesson.end || "", lessons: [] };
+        byTime.set(key, group);
+        groups.push(group);
+      }
+      byTime.get(key).lessons.push(lesson);
+    }
+
+    return groups.map((group) => {
+      const options = group.lessons.map((x) => `<div class="lesson-option"><span class="main"><b>${this._escape(x.fach || x.subject || "Unterricht")}</b>${this._renderBadges(x.badge)}<small>${this._escape(x.teacher || "")}${x.room ? " · " + this._escape(x.room) : ""}</small></span></div>`).join("");
+      return `<div class="lesson"><span class="time">${this._escape(group.start)}–${this._escape(group.end)}</span><div class="lesson-options">${options}</div></div>`;
+    }).join("");
   }
 
   _renderBadges(value) {
