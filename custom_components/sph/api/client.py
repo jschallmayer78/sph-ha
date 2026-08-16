@@ -11,18 +11,18 @@ from html import unescape
 import requests
 from bs4 import BeautifulSoup
 
-from .const import SPH_BASE, SPH_LOGIN, SPH_CONNECT
+from ..const import SPH_BASE, SPH_CONNECT, SPH_LOGIN
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class SphClient:
-    """SPH client following the current lanis-mobile/liblanis protocol."""
+    """Shared Schulportal Hessen client used by all SPH modules."""
 
     def __init__(self, school_id, username, password):
         self.school_id, self.username, self.password = str(school_id), username, password
         self.session = requests.Session()
-        self.session.headers["User-Agent"] = "Home Assistant SPH Stundenplan/0.2.7"
+        self.session.headers["User-Agent"] = "Home Assistant Schulportal Hessen/0.3.0"
         self.key = None
 
     @staticmethod
@@ -52,15 +52,13 @@ class SphClient:
     def _decrypt_tags(self, html):
         if not self.key:
             return html
-
         def repl(match):
             try:
                 data = self._decrypt(base64.b64decode(match.group(1)), self.key)
                 return data.decode("utf-8") if data else ""
             except Exception:
-                _LOGGER.debug("SPH: konnte einen verschlüsselten Seitenbereich nicht entschlüsseln", exc_info=True)
+                _LOGGER.debug("SPH: verschlüsselten Seitenbereich konnte nicht entschlüsseln", exc_info=True)
                 return ""
-
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
@@ -70,8 +68,7 @@ class SphClient:
         response = bootstrap.post(
             f"{SPH_LOGIN}?i={self.school_id}",
             data={"user": f"{self.school_id}.{self.username}", "user2": self.username, "password": self.password},
-            allow_redirects=False,
-            timeout=15,
+            allow_redirects=False, timeout=15,
         )
         _LOGGER.debug("SPH: Login-Request HTTP %s", response.status_code)
         if response.status_code == 503:
@@ -100,12 +97,7 @@ class SphClient:
         public_key = RSA.import_key(response.json()["publickey"])
         self.key = get_random_bytes(46)
         encrypted = PKCS1_v1_5.new(public_key).encrypt(self.key)
-        response = self.session.post(
-            f"{SPH_BASE}/ajax.php",
-            params={"f": "rsaHandshake", "s": random.randrange(2000)},
-            data={"key": base64.b64encode(encrypted).decode()},
-            timeout=15,
-        )
+        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f": "rsaHandshake", "s": random.randrange(2000)}, data={"key": base64.b64encode(encrypted).decode()}, timeout=15)
         response.raise_for_status()
         challenge = base64.b64decode(response.json()["challenge"])
         if self._decrypt(challenge, self.key) != self.key:
@@ -130,36 +122,26 @@ class SphClient:
             raise RuntimeError("Kein Stundenplan für dieses Konto verfügbar. Die SPH-Anmeldung war erfolgreich, aber stundenplan.php enthält weder #all noch #own.")
         return {"week_badge": badge.get_text(" ", strip=True) if badge else None, "all": self._parse(all_table) if all_table else [], "own": self._parse(own_table) if own_table else []}
 
-    def get_calendar(self, start: datetime, end: datetime) -> list[dict]:
-        """Return the personal Schulportal calendar as normalized events.
-
-        The SPH calendar exposes an authenticated iCalendar export. Using the
-        export is preferable to scraping the visual month view because SPH
-        applies the user's personal target-group permissions to the feed.
-        """
+    def get_calendar(self, start: datetime, end: datetime):
         self.login()
-        url = f"{SPH_BASE}/kalender.php"
-        params = {"i": self.school_id, "a": "ical"}
-        _LOGGER.debug("SPH: rufe persönlichen iCal-Kalender ab")
-        response = self.session.get(url, params=params, timeout=20)
+        response = self.session.get(f"{SPH_BASE}/kalender.php", params={"i": self.school_id, "a": "ical"}, timeout=20)
         response.raise_for_status()
         text = response.content.decode("utf-8-sig", errors="replace")
         if "BEGIN:VCALENDAR" not in text:
-            # Some installations wrap the calendar in an HTML response.
             text = self._decrypt_tags(response.text)
         if "BEGIN:VCALENDAR" not in text:
             raise RuntimeError("Der persönliche Schulkalender konnte nicht als iCal abgerufen werden.")
         events = self._parse_ical(text)
-        return [event for event in events if self._event_overlaps(event, start, end)]
+        return [e for e in events if self._event_overlaps(e, start, end)]
 
     @staticmethod
-    def _event_overlaps(event: dict, start: datetime, end: datetime) -> bool:
+    def _event_overlaps(event, start, end):
         event_start = datetime.fromisoformat(event["start"])
         event_end = datetime.fromisoformat(event["end"])
         return event_end >= start and event_start <= end
 
     @staticmethod
-    def _unfold_ical(text: str) -> list[str]:
+    def _unfold_ical(text):
         lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
         result = []
         for line in lines:
@@ -170,9 +152,8 @@ class SphClient:
         return result
 
     @classmethod
-    def _parse_ical(cls, text: str) -> list[dict]:
-        events = []
-        current = None
+    def _parse_ical(cls, text):
+        events, current = [], None
         for line in cls._unfold_ical(text):
             if line == "BEGIN:VEVENT":
                 current = {}
@@ -187,18 +168,13 @@ class SphClient:
             key, value = line.split(":", 1)
             name = key.split(";", 1)[0].upper()
             if name == "DTSTART":
-                current["start"] = cls._parse_ical_datetime(value, key)
+                current["start"] = cls._parse_ical_datetime(value)
                 current["all_day"] = len(value) == 8 and value.isdigit()
-            elif name == "DTEND":
-                current["end"] = cls._parse_ical_datetime(value, key)
-            elif name == "SUMMARY":
-                current["summary"] = cls._ical_unescape(value)
-            elif name == "DESCRIPTION":
-                current["description"] = cls._ical_unescape(value)
-            elif name == "LOCATION":
-                current["location"] = cls._ical_unescape(value)
-            elif name == "UID":
-                current["uid"] = value
+            elif name == "DTEND": current["end"] = cls._parse_ical_datetime(value)
+            elif name == "SUMMARY": current["summary"] = cls._ical_unescape(value)
+            elif name == "DESCRIPTION": current["description"] = cls._ical_unescape(value)
+            elif name == "LOCATION": current["location"] = cls._ical_unescape(value)
+            elif name == "UID": current["uid"] = value
         for event in events:
             event.setdefault("end", event["start"])
             event.setdefault("description", "")
@@ -207,19 +183,17 @@ class SphClient:
         return events
 
     @staticmethod
-    def _ical_unescape(value: str) -> str:
+    def _ical_unescape(value):
         return unescape(value.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\")).strip()
 
     @staticmethod
-    def _parse_ical_datetime(value: str, key: str) -> str:
+    def _parse_ical_datetime(value):
         value = value.strip()
         if len(value) == 8 and value.isdigit():
             return datetime.strptime(value, "%Y%m%d").isoformat()
         if value.endswith("Z"):
-            dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ")
-            return dt.isoformat() + "+00:00"
-        dt = datetime.strptime(value[:15], "%Y%m%dT%H%M%S")
-        return dt.isoformat()
+            return datetime.strptime(value, "%Y%m%dT%H%M%SZ").isoformat() + "+00:00"
+        return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").isoformat()
 
     @staticmethod
     def _parse(tbody):
@@ -234,25 +208,19 @@ class SphClient:
             element = row.select_one(".VonBis")
             if element:
                 parts = [x.strip() for x in element.get_text(" ", strip=True).split(" - ")]
-                if len(parts) == 2:
-                    slots.append((parts[0], parts[1]))
+                if len(parts) == 2: slots.append((parts[0], parts[1]))
         first = rows[0].find_all(["td", "th"], recursive=False)
         offset = bool(first and first[0].get_text(strip=True))
         for y, row in enumerate(rows):
-            if y == 0:
-                continue
+            if y == 0: continue
             for x, cell in enumerate(row.find_all(["td", "th"], recursive=False)):
-                if x == 0:
-                    continue
+                if x == 0: continue
                 span = int(cell.get("rowspan", "1") or "1")
                 day = x - 1
-                while day < day_count and occupied[y][day]:
-                    day += 1
-                if day >= day_count:
-                    continue
+                while day < day_count and occupied[y][day]: day += 1
+                if day >= day_count: continue
                 for i in range(span):
-                    if y + i < len(occupied):
-                        occupied[y + i][day] = True
+                    if y + i < len(occupied): occupied[y + i][day] = True
                 for lesson in cell.select(".stunde"):
                     b, sm, bd = lesson.select_one("b"), lesson.select_one("small"), lesson.select_one(".badge")
                     subject = b.get_text(" ", strip=True) if b else None
@@ -260,8 +228,7 @@ class SphClient:
                     badge = bd.get_text(" ", strip=True) if bd else None
                     room = unescape(" ".join(n.strip() for n in lesson.find_all(string=True, recursive=False) if n.strip()))
                     duration = int(lesson.parent.get("rowspan", "1") or "1")
-                    si = y if offset else y - 1
-                    ei = si + duration - 1
+                    si, ei = (y if offset else y - 1), (y if offset else y - 1) + duration - 1
                     start = slots[si][0] if 0 <= si < len(slots) else "00:00"
                     end = slots[ei][1] if 0 <= ei < len(slots) else "00:00"
                     result[day].append({"day": day, "subject": subject, "teacher": teacher, "room": room, "badge": badge, "duration": duration, "start": start, "end": end, "index": y})
