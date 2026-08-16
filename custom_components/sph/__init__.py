@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import logging
 
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
@@ -11,6 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_validation as cv
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 CARD_URLS = (
@@ -60,9 +63,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .kalender.coordinator import SphCalendarCoordinator
 
     timetable = SphTimetableCoordinator(hass, entry)
-    await timetable.async_config_entry_first_refresh()
+    try:
+        await timetable.async_config_entry_first_refresh()
+    except Exception as err:
+        # Keep the config entry usable even when one SPH module is temporarily
+        # unavailable. The coordinator remains registered and can retry later.
+        _LOGGER.warning(
+            "Schulportal Hessen Stundenplan für %s aktuell nicht verfügbar: %s",
+            entry.title,
+            err,
+        )
+
     calendar = SphCalendarCoordinator(hass, entry, timetable.client)
-    await calendar.async_config_entry_first_refresh()
+    try:
+        await calendar.async_config_entry_first_refresh()
+    except Exception as err:
+        # The personal calendar is an optional module. A missing/failed iCal
+        # endpoint must not prevent the complete SPH integration from loading.
+        _LOGGER.warning(
+            "Schulportal Hessen Kalender für %s aktuell nicht verfügbar: %s",
+            entry.title,
+            err,
+        )
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "timetable": timetable,
         "calendar": calendar,
