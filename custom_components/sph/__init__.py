@@ -43,13 +43,15 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     )
     for url in CARD_URLS:
         add_extra_js_url(hass, url)
+
     if hass.is_running:
         hass.async_create_task(_register_lovelace_resources(hass))
     else:
-        hass.bus.async_listen_once(
-            EVENT_HOMEASSISTANT_STARTED,
-            lambda _event: hass.async_create_task(_register_lovelace_resources(hass)),
-        )
+        async def _on_started(_event):
+            await _register_lovelace_resources(hass)
+
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
+
     return True
 
 
