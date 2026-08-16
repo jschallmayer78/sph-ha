@@ -6,6 +6,8 @@ CONF_CHILD_NAME = "child_name"
 CONF_CHILD_SHORTCUT = "child_shortcut"
 CONF_UPDATE_INTERVAL = "update_interval"
 DEFAULT_UPDATE_INTERVAL = 15
+
+# Authentication is hosted separately from the legacy school portal.
 SPH_BASE = "https://start.schulportal.hessen.de"
-SPH_LOGIN = f"{SPH_BASE}/login.php"
-SPH_CONNECT = f"{SPH_BASE}/connect.php"
+SPH_LOGIN = "https://login.schulportal.hessen.de/"
+SPH_CONNECT = "https://connect.schulportal.hessen.de/"
