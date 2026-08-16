@@ -7,6 +7,7 @@ import random
 import re
 from datetime import datetime
 from html import unescape
+from urllib.parse import urljoin, urlparse, parse_qs
 
 import requests
 from bs4 import BeautifulSoup
@@ -64,13 +65,11 @@ class SphClient:
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
-        """Perform the current Schulportal Hessen login handshake."""
         _LOGGER.debug(
             "SPH: starte Login-Handshake für Schulnummer %s und Benutzer %s",
             self.school_id,
             self.username,
         )
-
         response = self.session.post(
             f"{SPH_LOGIN}?i={self.school_id}",
             data={
@@ -87,15 +86,12 @@ class SphClient:
             bool(response.headers.get("Location")),
             list(self.session.cookies.keys()),
         )
-
         if response.status_code == 503:
             raise RuntimeError("Schulportal Hessen ist nicht verfügbar.")
         if response.status_code not in (200, 301, 302, 303, 307, 308):
-            _LOGGER.debug("SPH: Login-Server-Antwort: %s", response.text[:500])
             raise RuntimeError(
                 f"SPH-Anmeldung fehlgeschlagen (HTTP {response.status_code}). Zugangsdaten prüfen."
             )
-
         connect = self.session.head(SPH_CONNECT, allow_redirects=False, timeout=15)
         _LOGGER.debug(
             "SPH: connect HTTP %s, Location vorhanden=%s, Cookies=%s",
@@ -103,13 +99,10 @@ class SphClient:
             bool(connect.headers.get("Location")),
             list(self.session.cookies.keys()),
         )
-
         if connect.status_code in (401, 403):
             raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
-
         login_url = connect.headers.get("Location")
         if not login_url:
-            _LOGGER.debug("SPH: connect lieferte keine Weiterleitung (HTTP %s).", connect.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         return login_url
 
@@ -167,14 +160,78 @@ class SphClient:
             raise RuntimeError("Kein Stundenplan für dieses Konto verfügbar. Die SPH-Anmeldung war erfolgreich, aber stundenplan.php enthält weder #all noch #own.")
         return {"week_badge": badge.get_text(" ", strip=True) if badge else None, "all": self._parse(all_table) if all_table else [], "own": self._parse(own_table) if own_table else []}
 
+    def _calendar_export_url(self):
+        """Find the personal iCal export URL from the logged-in calendar page.
+
+        SPH normally exposes a tokenized URL such as
+        kalender.php?i=<school>&a=ical&t=<token>.  Calling a=ical without
+        the token can return the normal HTML calendar instead of ICS.
+        """
+        page = self.session.get(
+            f"{SPH_BASE}/kalender.php",
+            params={"i": self.school_id},
+            allow_redirects=True,
+            timeout=20,
+        )
+        _LOGGER.debug(
+            "SPH: Kalenderseite HTTP %s, URL=%s, Content-Type=%s",
+            page.status_code,
+            page.url,
+            page.headers.get("Content-Type"),
+        )
+        page.raise_for_status()
+        html = self._decrypt_tags(page.text)
+        soup = BeautifulSoup(html, "html.parser")
+
+        candidates = []
+        for anchor in soup.find_all("a", href=True):
+            href = unescape(anchor["href"])
+            parsed = urlparse(href)
+            query = parse_qs(parsed.query)
+            if query.get("a", [""])[0].lower() in {"ical", "ics"}:
+                candidates.append(urljoin(page.url, href))
+
+        # Some SPH versions render the export link in JavaScript instead of
+        # as a normal anchor. Look for the same tokenized URL in the HTML.
+        for match in re.finditer(r"(?:kalender\.php[^\"'\s<>]+)", html, re.I):
+            href = unescape(match.group(0))
+            parsed = urlparse(href if href.startswith("http") else urljoin(SPH_BASE + "/", href))
+            query = parse_qs(parsed.query)
+            if query.get("a", [""])[0].lower() in {"ical", "ics"}:
+                candidates.append(parsed.geturl())
+
+        # Prefer a tokenized personal export. Do not log the token itself.
+        candidates = list(dict.fromkeys(candidates))
+        candidates.sort(key=lambda url: ("t=" not in url, len(url)))
+        if candidates:
+            chosen = candidates[0]
+            _LOGGER.debug(
+                "SPH: persönlicher iCal-Export gefunden (tokenisiert=%s)",
+                "t=" in chosen,
+            )
+            return chosen
+
+        _LOGGER.debug("SPH: Kein iCal-Link auf kalender.php gefunden; verwende Fallback ohne Token")
+        return f"{SPH_BASE}/kalender.php?i={self.school_id}&a=ical"
+
     def get_calendar(self, start: datetime, end: datetime):
         self.login()
-        response = self.session.get(f"{SPH_BASE}/kalender.php", params={"i": self.school_id, "a": "ical"}, timeout=20)
+        url = self._calendar_export_url()
+        response = self.session.get(url, allow_redirects=True, timeout=30)
+        _LOGGER.debug(
+            "SPH: iCal-Export HTTP %s, URL=%s, Content-Type=%s, Bytes=%s",
+            response.status_code,
+            response.url.split("?", 1)[0],
+            response.headers.get("Content-Type"),
+            len(response.content),
+        )
         response.raise_for_status()
         text = response.content.decode("utf-8-sig", errors="replace")
         if "BEGIN:VCALENDAR" not in text:
             text = self._decrypt_tags(response.text)
         if "BEGIN:VCALENDAR" not in text:
+            snippet = re.sub(r"\s+", " ", text[:300])
+            _LOGGER.debug("SPH: iCal-Antwort enthält kein VCALENDAR: %s", snippet)
             raise RuntimeError("Der persönliche Schulkalender konnte nicht als iCal abgerufen werden.")
         events = self._parse_ical(text)
         return [e for e in events if self._event_overlaps(e, start, end)]
