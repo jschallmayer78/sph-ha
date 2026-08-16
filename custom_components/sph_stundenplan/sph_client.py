@@ -5,6 +5,7 @@ import hashlib
 import logging
 import random
 import re
+from datetime import datetime
 from html import unescape
 
 import requests
@@ -21,13 +22,11 @@ class SphClient:
     def __init__(self, school_id, username, password):
         self.school_id, self.username, self.password = str(school_id), username, password
         self.session = requests.Session()
-        self.session.headers["User-Agent"] = "Home Assistant SPH Stundenplan/0.2.3"
+        self.session.headers["User-Agent"] = "Home Assistant SPH Stundenplan/0.2.7"
         self.key = None
 
     @staticmethod
     def _crypto():
-        # Import pycryptodome lazily. Its import can inspect /lib/libgmp.so,
-        # which is a blocking filesystem operation on Python 3.14.
         from Crypto.Cipher import AES, PKCS1_v1_5
         from Crypto.PublicKey import RSA
         from Crypto.Random import get_random_bytes
@@ -65,13 +64,12 @@ class SphClient:
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
-        """Perform the SPH login bootstrap and return its final login URL."""
         _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s", self.school_id)
         bootstrap = requests.Session()
         bootstrap.headers["User-Agent"] = self.session.headers["User-Agent"]
         response = bootstrap.post(
             f"{SPH_LOGIN}?i={self.school_id}",
-            data={"user":f"{self.school_id}.{self.username}","user2":self.username,"password":self.password},
+            data={"user": f"{self.school_id}.{self.username}", "user2": self.username, "password": self.password},
             allow_redirects=False,
             timeout=15,
         )
@@ -80,74 +78,148 @@ class SphClient:
             raise RuntimeError("Schulportal Hessen ist nicht verfügbar.")
         location = response.headers.get("Location")
         if not location:
-            _LOGGER.warning("SPH: Login fehlgeschlagen; keine Weiterleitung erhalten (HTTP %s)", response.status_code)
             raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
-        _LOGGER.debug("SPH: Login-Weiterleitung erhalten")
-
         connect = bootstrap.get(SPH_CONNECT, allow_redirects=False, timeout=15)
-        _LOGGER.debug("SPH: Connect-Request HTTP %s", connect.status_code)
         login_url = connect.headers.get("Location")
         if not login_url:
-            _LOGGER.warning("SPH: Connect-Weiterleitung fehlt (HTTP %s)", connect.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         return login_url
 
     def login(self):
         login_url = self._get_login_url()
         response = self.session.get(login_url, allow_redirects=False, timeout=15)
-        _LOGGER.debug("SPH: Login-URL HTTP %s", response.status_code)
         if response.status_code not in (200, 302):
-            _LOGGER.warning("SPH: authentifizierte Login-URL lieferte HTTP %s", response.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         _LOGGER.debug("SPH: Login erfolgreich")
         self._handshake()
 
     def _handshake(self):
         _, PKCS1_v1_5, RSA, get_random_bytes, _ = self._crypto()
-        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f":"rsaPublicKey"}, timeout=15)
-        _LOGGER.debug("SPH: RSA-Public-Key HTTP %s", response.status_code)
+        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f": "rsaPublicKey"}, timeout=15)
         response.raise_for_status()
         public_key = RSA.import_key(response.json()["publickey"])
         self.key = get_random_bytes(46)
         encrypted = PKCS1_v1_5.new(public_key).encrypt(self.key)
-        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f":"rsaHandshake","s":random.randrange(2000)}, data={"key":base64.b64encode(encrypted).decode()}, timeout=15)
-        _LOGGER.debug("SPH: RSA-Handshake HTTP %s", response.status_code)
+        response = self.session.post(
+            f"{SPH_BASE}/ajax.php",
+            params={"f": "rsaHandshake", "s": random.randrange(2000)},
+            data={"key": base64.b64encode(encrypted).decode()},
+            timeout=15,
+        )
         response.raise_for_status()
         challenge = base64.b64decode(response.json()["challenge"])
         if self._decrypt(challenge, self.key) != self.key:
             self.key = None
-            _LOGGER.warning("SPH: RSA/AES-Handshake konnte nicht verifiziert werden")
             raise RuntimeError("SPH RSA/AES-Handshake fehlgeschlagen.")
-        _LOGGER.debug("SPH: RSA/AES-Handshake erfolgreich")
 
     def get_timetable(self):
         self.login()
-        _LOGGER.debug("SPH: rufe Stundenplan-Seite ab")
         response = self.session.get(f"{SPH_BASE}/stundenplan.php", allow_redirects=False, timeout=20)
-        _LOGGER.debug("SPH: stundenplan.php HTTP %s", response.status_code)
         if response.status_code == 302:
             location = response.headers.get("Location")
             if not location:
                 raise RuntimeError("Keine SPH-Weiterleitung für Stundenplan.")
-            _LOGGER.debug("SPH: Stundenplan-Weiterleitung erhalten")
             response = self.session.get(location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}", allow_redirects=False, timeout=20)
-            _LOGGER.debug("SPH: weitergeleitete Stundenplan-Seite HTTP %s", response.status_code)
         response.raise_for_status()
-
         html = self._decrypt_tags(response.text)
         soup = BeautifulSoup(html, "html.parser")
         badge = soup.select_one("#aktuelleWoche")
         all_table = soup.select_one("#all tbody")
         own_table = soup.select_one("#own tbody")
-        _LOGGER.debug("SPH: Stundenplan gefunden: #all=%s, #own=%s, verschlüsselte Bereiche=%s", bool(all_table), bool(own_table), "<encoded>" in response.text)
-
         if all_table is None and own_table is None:
-            _LOGGER.warning("SPH: Login/Handshake erfolgreich, aber stundenplan.php enthält weder #all noch #own")
             raise RuntimeError("Kein Stundenplan für dieses Konto verfügbar. Die SPH-Anmeldung war erfolgreich, aber stundenplan.php enthält weder #all noch #own.")
+        return {"week_badge": badge.get_text(" ", strip=True) if badge else None, "all": self._parse(all_table) if all_table else [], "own": self._parse(own_table) if own_table else []}
 
-        timetable = {"week_badge":badge.get_text(" ",strip=True) if badge else None,"all":self._parse(all_table) if all_table else [],"own":self._parse(own_table) if own_table else []}
-        _LOGGER.debug("SPH: Stundenplan erfolgreich geparst")
-        return timetable
+    def get_calendar(self, start: datetime, end: datetime) -> list[dict]:
+        """Return the personal Schulportal calendar as normalized events.
+
+        The SPH calendar exposes an authenticated iCalendar export. Using the
+        export is preferable to scraping the visual month view because SPH
+        applies the user's personal target-group permissions to the feed.
+        """
+        self.login()
+        url = f"{SPH_BASE}/kalender.php"
+        params = {"i": self.school_id, "a": "ical"}
+        _LOGGER.debug("SPH: rufe persönlichen iCal-Kalender ab")
+        response = self.session.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        text = response.content.decode("utf-8-sig", errors="replace")
+        if "BEGIN:VCALENDAR" not in text:
+            # Some installations wrap the calendar in an HTML response.
+            text = self._decrypt_tags(response.text)
+        if "BEGIN:VCALENDAR" not in text:
+            raise RuntimeError("Der persönliche Schulkalender konnte nicht als iCal abgerufen werden.")
+        events = self._parse_ical(text)
+        return [event for event in events if self._event_overlaps(event, start, end)]
+
+    @staticmethod
+    def _event_overlaps(event: dict, start: datetime, end: datetime) -> bool:
+        event_start = datetime.fromisoformat(event["start"])
+        event_end = datetime.fromisoformat(event["end"])
+        return event_end >= start and event_start <= end
+
+    @staticmethod
+    def _unfold_ical(text: str) -> list[str]:
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        result = []
+        for line in lines:
+            if line.startswith((" ", "\t")) and result:
+                result[-1] += line[1:]
+            else:
+                result.append(line)
+        return result
+
+    @classmethod
+    def _parse_ical(cls, text: str) -> list[dict]:
+        events = []
+        current = None
+        for line in cls._unfold_ical(text):
+            if line == "BEGIN:VEVENT":
+                current = {}
+                continue
+            if line == "END:VEVENT":
+                if current and current.get("start") and current.get("summary"):
+                    events.append(current)
+                current = None
+                continue
+            if current is None or ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            name = key.split(";", 1)[0].upper()
+            if name == "DTSTART":
+                current["start"] = cls._parse_ical_datetime(value, key)
+                current["all_day"] = len(value) == 8 and value.isdigit()
+            elif name == "DTEND":
+                current["end"] = cls._parse_ical_datetime(value, key)
+            elif name == "SUMMARY":
+                current["summary"] = cls._ical_unescape(value)
+            elif name == "DESCRIPTION":
+                current["description"] = cls._ical_unescape(value)
+            elif name == "LOCATION":
+                current["location"] = cls._ical_unescape(value)
+            elif name == "UID":
+                current["uid"] = value
+        for event in events:
+            event.setdefault("end", event["start"])
+            event.setdefault("description", "")
+            event.setdefault("location", "")
+            event.setdefault("uid", "")
+        return events
+
+    @staticmethod
+    def _ical_unescape(value: str) -> str:
+        return unescape(value.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\")).strip()
+
+    @staticmethod
+    def _parse_ical_datetime(value: str, key: str) -> str:
+        value = value.strip()
+        if len(value) == 8 and value.isdigit():
+            return datetime.strptime(value, "%Y%m%d").isoformat()
+        if value.endswith("Z"):
+            dt = datetime.strptime(value, "%Y%m%dT%H%M%SZ")
+            return dt.isoformat() + "+00:00"
+        dt = datetime.strptime(value[:15], "%Y%m%dT%H%M%S")
+        return dt.isoformat()
 
     @staticmethod
     def _parse(tbody):
@@ -167,21 +239,30 @@ class SphClient:
         first = rows[0].find_all(["td", "th"], recursive=False)
         offset = bool(first and first[0].get_text(strip=True))
         for y, row in enumerate(rows):
-            if y == 0: continue
+            if y == 0:
+                continue
             for x, cell in enumerate(row.find_all(["td", "th"], recursive=False)):
-                if x == 0: continue
+                if x == 0:
+                    continue
                 span = int(cell.get("rowspan", "1") or "1")
                 day = x - 1
-                while day < day_count and occupied[y][day]: day += 1
-                if day >= day_count: continue
+                while day < day_count and occupied[y][day]:
+                    day += 1
+                if day >= day_count:
+                    continue
                 for i in range(span):
-                    if y+i < len(occupied): occupied[y+i][day] = True
+                    if y + i < len(occupied):
+                        occupied[y + i][day] = True
                 for lesson in cell.select(".stunde"):
-                    b,sm,bd=lesson.select_one("b"),lesson.select_one("small"),lesson.select_one(".badge")
-                    subject=b.get_text(" ",strip=True) if b else None; teacher=sm.get_text(" ",strip=True) if sm else None; badge=bd.get_text(" ",strip=True) if bd else None
-                    room=unescape(" ".join(n.strip() for n in lesson.find_all(string=True,recursive=False) if n.strip()))
-                    duration=int(lesson.parent.get("rowspan","1") or "1")
-                    si=y if offset else y-1; ei=si+duration-1
-                    start=slots[si][0] if 0<=si<len(slots) else "00:00"; end=slots[ei][1] if 0<=ei<len(slots) else "00:00"
-                    result[day].append({"day":day,"subject":subject,"teacher":teacher,"room":room,"badge":badge,"duration":duration,"start":start,"end":end,"index":y})
+                    b, sm, bd = lesson.select_one("b"), lesson.select_one("small"), lesson.select_one(".badge")
+                    subject = b.get_text(" ", strip=True) if b else None
+                    teacher = sm.get_text(" ", strip=True) if sm else None
+                    badge = bd.get_text(" ", strip=True) if bd else None
+                    room = unescape(" ".join(n.strip() for n in lesson.find_all(string=True, recursive=False) if n.strip()))
+                    duration = int(lesson.parent.get("rowspan", "1") or "1")
+                    si = y if offset else y - 1
+                    ei = si + duration - 1
+                    start = slots[si][0] if 0 <= si < len(slots) else "00:00"
+                    end = slots[ei][1] if 0 <= ei < len(slots) else "00:00"
+                    result[day].append({"day": day, "subject": subject, "teacher": teacher, "room": room, "badge": badge, "duration": duration, "start": start, "end": end, "index": y})
         return result
