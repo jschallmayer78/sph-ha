@@ -64,14 +64,12 @@ class SphClient:
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
-        """Perform the SPH login handshake and keep all cookies in one session.
-
-        login.php and connect.php are part of the same browser-style login flow.
-        They must therefore use the same requests.Session; using a temporary
-        session here loses the cookies created by login.php and causes the
-        subsequent connect/login request to be rejected.
-        """
-        _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s und Benutzer %s", self.school_id, self.username)
+        """Perform the current Schulportal Hessen login handshake."""
+        _LOGGER.debug(
+            "SPH: starte Login-Handshake für Schulnummer %s und Benutzer %s",
+            self.school_id,
+            self.username,
+        )
 
         response = self.session.post(
             f"{SPH_LOGIN}?i={self.school_id}",
@@ -84,31 +82,34 @@ class SphClient:
             timeout=15,
         )
         _LOGGER.debug(
-            "SPH: Login-Request HTTP %s, Location=%s, Cookies=%s",
+            "SPH: Login-Request HTTP %s, Location vorhanden=%s, Cookies=%s",
             response.status_code,
-            response.headers.get("Location"),
+            bool(response.headers.get("Location")),
             list(self.session.cookies.keys()),
         )
 
         if response.status_code == 503:
             raise RuntimeError("Schulportal Hessen ist nicht verfügbar.")
+        if response.status_code not in (200, 301, 302, 303, 307, 308):
+            _LOGGER.debug("SPH: Login-Server-Antwort: %s", response.text[:500])
+            raise RuntimeError(
+                f"SPH-Anmeldung fehlgeschlagen (HTTP {response.status_code}). Zugangsdaten prüfen."
+            )
 
-        location = response.headers.get("Location")
-        if not location:
-            # Keep the actual server response out of the exception, but log it
-            # at debug level to make authentication failures diagnosable.
-            _LOGGER.debug("SPH: login.php lieferte keine Weiterleitung, Antwort: %s", response.text[:500])
-            raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
-
-        connect = self.session.get(SPH_CONNECT, allow_redirects=False, timeout=15)
+        connect = self.session.head(SPH_CONNECT, allow_redirects=False, timeout=15)
         _LOGGER.debug(
-            "SPH: connect.php HTTP %s, Location=%s, Cookies=%s",
+            "SPH: connect HTTP %s, Location vorhanden=%s, Cookies=%s",
             connect.status_code,
-            connect.headers.get("Location"),
+            bool(connect.headers.get("Location")),
             list(self.session.cookies.keys()),
         )
+
+        if connect.status_code in (401, 403):
+            raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
+
         login_url = connect.headers.get("Location")
         if not login_url:
+            _LOGGER.debug("SPH: connect lieferte keine Weiterleitung (HTTP %s).", connect.status_code)
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         return login_url
 
@@ -120,7 +121,7 @@ class SphClient:
             response.status_code,
             login_url,
         )
-        if response.status_code not in (200, 302):
+        if response.status_code not in (200, 301, 302, 303, 307, 308):
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         _LOGGER.debug("SPH: Login erfolgreich für Benutzer %s", self.username)
         self._handshake()
