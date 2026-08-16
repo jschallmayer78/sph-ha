@@ -22,7 +22,7 @@ class SphClient:
     def __init__(self, school_id, username, password):
         self.school_id, self.username, self.password = str(school_id), username, password
         self.session = requests.Session()
-        self.session.headers["User-Agent"] = "Home Assistant Schulportal Hessen/0.3.0"
+        self.session.headers["User-Agent"] = "Home Assistant Schulportal Hessen/0.3.1"
         self.key = None
 
     @staticmethod
@@ -52,6 +52,7 @@ class SphClient:
     def _decrypt_tags(self, html):
         if not self.key:
             return html
+
         def repl(match):
             try:
                 data = self._decrypt(base64.b64decode(match.group(1)), self.key)
@@ -59,24 +60,53 @@ class SphClient:
             except Exception:
                 _LOGGER.debug("SPH: verschlüsselten Seitenbereich konnte nicht entschlüsseln", exc_info=True)
                 return ""
+
         return re.sub(r"<encoded>(.*?)</encoded>", repl, html, flags=re.S)
 
     def _get_login_url(self):
-        _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s", self.school_id)
-        bootstrap = requests.Session()
-        bootstrap.headers["User-Agent"] = self.session.headers["User-Agent"]
-        response = bootstrap.post(
+        """Perform the SPH login handshake and keep all cookies in one session.
+
+        login.php and connect.php are part of the same browser-style login flow.
+        They must therefore use the same requests.Session; using a temporary
+        session here loses the cookies created by login.php and causes the
+        subsequent connect/login request to be rejected.
+        """
+        _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s und Benutzer %s", self.school_id, self.username)
+
+        response = self.session.post(
             f"{SPH_LOGIN}?i={self.school_id}",
-            data={"user": f"{self.school_id}.{self.username}", "user2": self.username, "password": self.password},
-            allow_redirects=False, timeout=15,
+            data={
+                "user": f"{self.school_id}.{self.username}",
+                "user2": self.username,
+                "password": self.password,
+            },
+            allow_redirects=False,
+            timeout=15,
         )
-        _LOGGER.debug("SPH: Login-Request HTTP %s", response.status_code)
+        _LOGGER.debug(
+            "SPH: Login-Request HTTP %s, Location=%s, Cookies=%s",
+            response.status_code,
+            response.headers.get("Location"),
+            list(self.session.cookies.keys()),
+        )
+
         if response.status_code == 503:
             raise RuntimeError("Schulportal Hessen ist nicht verfügbar.")
+
         location = response.headers.get("Location")
         if not location:
+            # Keep the actual server response out of the exception, but log it
+            # at debug level to make authentication failures diagnosable.
+            _LOGGER.debug("SPH: login.php lieferte keine Weiterleitung, Antwort: %s", response.text[:500])
             raise RuntimeError("SPH-Anmeldung fehlgeschlagen. Zugangsdaten prüfen.")
-        connect = bootstrap.get(SPH_CONNECT, allow_redirects=False, timeout=15)
+
+        connect = self.session.get(SPH_CONNECT, allow_redirects=False, timeout=15)
+        _LOGGER.debug(
+            "SPH: connect.php HTTP %s, Location=%s, Cookies=%s",
+            connect.status_code,
+            connect.headers.get("Location"),
+            list(self.session.cookies.keys()),
+        )
         login_url = connect.headers.get("Location")
         if not login_url:
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
@@ -85,9 +115,14 @@ class SphClient:
     def login(self):
         login_url = self._get_login_url()
         response = self.session.get(login_url, allow_redirects=False, timeout=15)
+        _LOGGER.debug(
+            "SPH: Ziel der Login-Weiterleitung HTTP %s, URL=%s",
+            response.status_code,
+            login_url,
+        )
         if response.status_code not in (200, 302):
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
-        _LOGGER.debug("SPH: Login erfolgreich")
+        _LOGGER.debug("SPH: Login erfolgreich für Benutzer %s", self.username)
         self._handshake()
 
     def _handshake(self):
@@ -97,7 +132,12 @@ class SphClient:
         public_key = RSA.import_key(response.json()["publickey"])
         self.key = get_random_bytes(46)
         encrypted = PKCS1_v1_5.new(public_key).encrypt(self.key)
-        response = self.session.post(f"{SPH_BASE}/ajax.php", params={"f": "rsaHandshake", "s": random.randrange(2000)}, data={"key": base64.b64encode(encrypted).decode()}, timeout=15)
+        response = self.session.post(
+            f"{SPH_BASE}/ajax.php",
+            params={"f": "rsaHandshake", "s": random.randrange(2000)},
+            data={"key": base64.b64encode(encrypted).decode()},
+            timeout=15,
+        )
         response.raise_for_status()
         challenge = base64.b64decode(response.json()["challenge"])
         if self._decrypt(challenge, self.key) != self.key:
@@ -111,7 +151,11 @@ class SphClient:
             location = response.headers.get("Location")
             if not location:
                 raise RuntimeError("Keine SPH-Weiterleitung für Stundenplan.")
-            response = self.session.get(location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}", allow_redirects=False, timeout=20)
+            response = self.session.get(
+                location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}",
+                allow_redirects=False,
+                timeout=20,
+            )
         response.raise_for_status()
         html = self._decrypt_tags(response.text)
         soup = BeautifulSoup(html, "html.parser")
@@ -208,19 +252,25 @@ class SphClient:
             element = row.select_one(".VonBis")
             if element:
                 parts = [x.strip() for x in element.get_text(" ", strip=True).split(" - ")]
-                if len(parts) == 2: slots.append((parts[0], parts[1]))
+                if len(parts) == 2:
+                    slots.append((parts[0], parts[1]))
         first = rows[0].find_all(["td", "th"], recursive=False)
         offset = bool(first and first[0].get_text(strip=True))
         for y, row in enumerate(rows):
-            if y == 0: continue
+            if y == 0:
+                continue
             for x, cell in enumerate(row.find_all(["td", "th"], recursive=False)):
-                if x == 0: continue
+                if x == 0:
+                    continue
                 span = int(cell.get("rowspan", "1") or "1")
                 day = x - 1
-                while day < day_count and occupied[y][day]: day += 1
-                if day >= day_count: continue
+                while day < day_count and occupied[y][day]:
+                    day += 1
+                if day >= day_count:
+                    continue
                 for i in range(span):
-                    if y + i < len(occupied): occupied[y + i][day] = True
+                    if y + i < len(occupied):
+                        occupied[y + i][day] = True
                 for lesson in cell.select(".stunde"):
                     b, sm, bd = lesson.select_one("b"), lesson.select_one("small"), lesson.select_one(".badge")
                     subject = b.get_text(" ", strip=True) if b else None
