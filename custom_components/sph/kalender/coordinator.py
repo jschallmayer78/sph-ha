@@ -39,20 +39,10 @@ def _school_year_bounds(school_year_start: int) -> tuple[datetime, datetime]:
     previous_summer = HESSEN_SOMMERFERIEN.get(school_year_start)
     next_summer = HESSEN_SOMMERFERIEN.get(school_year_start + 1)
 
-    start_date = (
-        previous_summer[1] + timedelta(days=1)
-        if previous_summer
-        else date(school_year_start, 8, 1)
-    )
-    end_date = (
-        next_summer[0] - timedelta(days=1)
-        if next_summer
-        else date(school_year_start + 1, 7, 31)
-    )
+    start_date = previous_summer[1] + timedelta(days=1) if previous_summer else date(school_year_start, 8, 1)
+    end_date = next_summer[0] - timedelta(days=1) if next_summer else date(school_year_start + 1, 7, 31)
 
-    return datetime.combine(start_date, datetime.min.time()), datetime.combine(
-        end_date, datetime.max.time()
-    )
+    return datetime.combine(start_date, datetime.min.time()), datetime.combine(end_date, datetime.max.time())
 
 
 class SphCalendarCoordinator(DataUpdateCoordinator):
@@ -63,9 +53,7 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
             hass,
             logger=_LOGGER,
             name="Schulportal Hessen Kalender",
-            update_interval=timedelta(
-                minutes=int(entry.data.get(CONF_UPDATE_INTERVAL, 15))
-            ),
+            update_interval=timedelta(minutes=int(entry.data.get(CONF_UPDATE_INTERVAL, 15))),
         )
 
     async def _async_update_data(self):
@@ -82,20 +70,19 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
                 end.date(),
             )
 
+            # Pass the school year explicitly. This prevents the API client from
+            # accidentally choosing the previous school year based on the range.
             events = await self.hass.async_add_executor_job(
-                self.client.get_calendar, start, end
+                self.client.get_calendar, start, end, school_year_start
             )
 
-            # client.get_calendar deliberately uses an overlap comparison.
-            # The export for a new school year still contains the preceding
-            # summer holidays, which can overlap the first school-year day.
-            # Keep only events whose own start lies inside the current year.
+            # Keep only events whose own start lies inside the effective school-year range.
             start_iso = start.isoformat()
             end_iso = end.isoformat()
             events = [
                 event
                 for event in (events or [])
-                if start_iso <= event.get("start", "") <= end_iso
+                if start_iso <= str(event.get("start", "")) <= end_iso
             ]
 
             _LOGGER.debug(
