@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schulportal Hessen",
+        "description": "Set up a child and its Schulportal Hessen account.",
+        "data": {
+          "child_name": "Child name",
+          "child_shortcut": "Child shortcut",
+          "school_id": "School ID",
+          "username": "Username",
+          "password": "Password",
+          "update_interval": "Update interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_school_id": "The school ID must be numeric.",
+      "invalid_child": "The child name and shortcut must not be empty."
+    },
+    "abort": {}
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure Schulportal Hessen",
+        "description": "Change the login credentials, school ID, child information, or update interval. The integration will be reloaded automatically afterwards.",
+        "data": {
+          "child_name": "Child name",
+          "child_shortcut": "Child shortcut",
+          "school_id": "School ID",
+          "username": "Username",
+          "password": "Password",
+          "update_interval": "Update interval (minutes)"
+        }
+      }
+    },
+    "error": {
+      "invalid_school_id": "The school ID must be numeric.",
+      "invalid_child": "The child name and shortcut must not be empty."
+    }
+  }
+}
