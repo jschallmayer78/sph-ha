@@ -26,7 +26,6 @@ class SphClient:
         self.session = requests.Session()
         self.session.headers["User-Agent"] = "Home Assistant Schulportal Hessen/0.3.1"
         self.key = None
-        self._logged_in = False
 
     @staticmethod
     def _crypto():
@@ -88,19 +87,7 @@ class SphClient:
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         return login_url
 
-    def login(self, force: bool = False):
-        """Authenticate once and reuse the shared session for all modules.
-
-        Timetable and calendar coordinators deliberately share one SphClient.
-        Avoiding a second login on every module refresh both reduces load on SPH
-        and prevents two independent authentication sessions from expiring at
-        different times.
-        """
-        if self._logged_in and not force:
-            _LOGGER.debug("SPH: verwende bestehende Login-Session für Benutzer %s", self.username)
-            return
-
-        self._logged_in = False
+    def login(self):
         login_url = self._get_login_url()
         response = self.session.get(login_url, allow_redirects=False, timeout=15)
         _LOGGER.debug("SPH: Ziel der Login-Weiterleitung HTTP %s, URL=%s", response.status_code, login_url)
@@ -108,7 +95,6 @@ class SphClient:
             raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
         _LOGGER.debug("SPH: Login erfolgreich für Benutzer %s", self.username)
         self._handshake()
-        self._logged_in = True
 
     def _handshake(self):
         _, PKCS1_v1_5, RSA, get_random_bytes, _ = self._crypto()
@@ -127,16 +113,11 @@ class SphClient:
     def get_timetable(self):
         self.login()
         response = self.session.get(f"{SPH_BASE}/stundenplan.php", allow_redirects=False, timeout=20)
-        if response.status_code in (301, 302, 303, 307, 308):
-            # The session may have expired since the last refresh. Re-authenticate
-            # once and retry instead of exposing the login page as timetable data.
-            self.login(force=True)
-            response = self.session.get(f"{SPH_BASE}/stundenplan.php", allow_redirects=False, timeout=20)
-            if response.status_code in (301, 302, 303, 307, 308):
-                location = response.headers.get("Location")
-                if not location:
-                    raise RuntimeError("Keine SPH-Weiterleitung für Stundenplan.")
-                response = self.session.get(location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}", allow_redirects=False, timeout=20)
+        if response.status_code == 302:
+            location = response.headers.get("Location")
+            if not location:
+                raise RuntimeError("Keine SPH-Weiterleitung für Stundenplan.")
+            response = self.session.get(location if location.startswith("http") else f"{SPH_BASE}/{location.lstrip('/')}", allow_redirects=False, timeout=20)
         response.raise_for_status()
         soup = BeautifulSoup(self._decrypt_tags(response.text), "html.parser")
         badge = soup.select_one("#aktuelleWoche")
@@ -148,6 +129,7 @@ class SphClient:
 
     @staticmethod
     def _school_year_start_year(value: datetime) -> int:
+        """Return the first calendar year of the German school year containing value."""
         return value.year if value.month >= 8 else value.year - 1
 
     def _calendar_export_url(self, school_year: int, export_type: str) -> str:
@@ -155,8 +137,10 @@ class SphClient:
         return f"{SPH_BASE}/kalender.php"
 
     def get_calendar(self, start: datetime, end: datetime, school_year: int | None = None):
-        """Fetch one explicit school-year export and filter it to the requested range."""
+        """Fetch the export for one explicit school year and filter it to the requested range."""
         self.login()
+        # The coordinator determines the school year from the official Hessian
+        # holiday boundaries. Do not derive it from an arbitrary range date here.
         if school_year is None:
             school_year = self._school_year_start_year(start)
         _LOGGER.debug("SPH: Kalenderabruf explizit für Schuljahr %s/%s", school_year, school_year + 1)
@@ -176,12 +160,11 @@ class SphClient:
     def _get_calendar_csv(self, school_year: int):
         url = self._calendar_export_url(school_year, "csv")
         response = self.session.get(url, params={"a": "export", "export": "csv", "year": school_year}, allow_redirects=True, timeout=30)
-        if response.status_code in (401, 403):
-            self.login(force=True)
-            response = self.session.get(url, params={"a": "export", "export": "csv", "year": school_year}, allow_redirects=True, timeout=30)
         _LOGGER.debug("SPH: CSV-Export für Schuljahr %s/%s HTTP %s, URL=%s, Content-Type=%s, Bytes=%s", school_year, school_year + 1, response.status_code, response.url.split("?", 1)[0], response.headers.get("Content-Type"), len(response.content))
         response.raise_for_status()
         text = response.content.decode("utf-8-sig", errors="replace")
+        if not text.strip():
+            raise RuntimeError("CSV-Antwort ist leer.")
         if "<!doctype" in text[:500].lower() or "<html" in text[:500].lower():
             text = self._decrypt_tags(text)
         if not text.strip() or "Von_Datum" not in text:
@@ -199,7 +182,7 @@ class SphClient:
         reader = csv.DictReader(io.StringIO(text), dialect=dialect)
         if not reader.fieldnames:
             return []
-        field_map = {re.sub(r"^\ufeff", "", (name or "")).strip().lower(): name for name in reader.fieldnames}
+        field_map = {re.sub(r"^\\ufeff", "", (name or "")).strip().lower(): name for name in reader.fieldnames}
 
         def value(row, *names):
             for name in names:
@@ -320,26 +303,58 @@ class SphClient:
 
     @staticmethod
     def _ical_unescape(value):
-        return unescape(value.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\"))
+        return unescape(value.replace("\\n", "\n").replace("\\,", ",").replace("\\;", ";").replace("\\\\", "\\")).strip()
 
     @staticmethod
     def _parse_ical_datetime(value):
         value = value.strip()
-        for fmt in ("%Y%m%dT%H%M%S", "%Y%m%dT%H%M", "%Y%m%d"):
-            try:
-                return datetime.strptime(value[:15] if fmt != "%Y%m%d" else value[:8], fmt).isoformat()
-            except ValueError:
-                continue
-        return None
+        if len(value) == 8 and value.isdigit():
+            return datetime.strptime(value, "%Y%m%d").isoformat()
+        if value.endswith("Z"):
+            return datetime.strptime(value, "%Y%m%dT%H%M%SZ").isoformat() + "+00:00"
+        return datetime.strptime(value[:15], "%Y%m%dT%H%M%S").isoformat()
 
     @staticmethod
-    def _parse(table):
-        if table is None:
+    def _parse(tbody):
+        rows = tbody.find_all("tr", recursive=False)
+        if not rows:
             return []
-        result = []
-        for row in table.select("tr"):
-            cells = row.select("td")
-            if not cells:
+        day_count = max(0, len(rows[0].find_all(["td", "th"], recursive=False)) - 1)
+        result = [[] for _ in range(day_count)]
+        occupied = [[False] * day_count for _ in range(len(rows) + 32)]
+        slots = []
+        for row in rows:
+            element = row.select_one(".VonBis")
+            if element:
+                parts = [x.strip() for x in element.get_text(" ", strip=True).split(" - ")]
+                if len(parts) == 2:
+                    slots.append((parts[0], parts[1]))
+        first = rows[0].find_all(["td", "th"], recursive=False)
+        offset = bool(first and first[0].get_text(strip=True))
+        for y, row in enumerate(rows):
+            if y == 0:
                 continue
-            result.append({"subject": cells[0].get_text(" ", strip=True), "teacher": cells[1].get_text(" ", strip=True) if len(cells) > 1 else "", "room": cells[2].get_text(" ", strip=True) if len(cells) > 2 else "", "badge": cells[3].get_text(" ", strip=True) if len(cells) > 3 else None})
+            for x, cell in enumerate(row.find_all(["td", "th"], recursive=False)):
+                if x == 0:
+                    continue
+                span = int(cell.get("rowspan", "1") or "1")
+                day = x - 1
+                while day < day_count and occupied[y][day]:
+                    day += 1
+                if day >= day_count:
+                    continue
+                for i in range(span):
+                    if y + i < len(occupied):
+                        occupied[y + i][day] = True
+                for lesson in cell.select(".stunde"):
+                    b, sm, bd = lesson.select_one("b"), lesson.select_one("small"), lesson.select_one(".badge")
+                    subject = b.get_text(" ", strip=True) if b else None
+                    teacher = sm.get_text(" ", strip=True) if sm else None
+                    badge = bd.get_text(" ", strip=True) if bd else None
+                    room = unescape(" ".join(n.strip() for n in lesson.find_all(string=True, recursive=False) if n.strip()))
+                    duration = int(lesson.parent.get("rowspan", "1") or "1")
+                    si, ei = (y if offset else y - 1), (y if offset else y - 1) + duration - 1
+                    start = slots[si][0] if 0 <= si < len(slots) else "00:00"
+                    end = slots[ei][1] if 0 <= ei < len(slots) else "00:00"
+                    result[day].append({"day": day, "subject": subject, "teacher": teacher, "room": room, "badge": badge, "duration": duration, "start": start, "end": end, "index": y})
         return result
