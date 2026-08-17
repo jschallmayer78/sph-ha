@@ -23,11 +23,19 @@ class SphConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         if user_input is not None:
             if not user_input[CONF_SCHOOL_ID].isdigit():
-                return self.async_show_form(step_id="user", data_schema=self._schema(user_input), errors={"base": "invalid_school_id"})
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=self._schema(user_input),
+                    errors={"base": "invalid_school_id"},
+                )
             user_input[CONF_CHILD_NAME] = user_input[CONF_CHILD_NAME].strip()
             user_input[CONF_CHILD_SHORTCUT] = user_input[CONF_CHILD_SHORTCUT].strip()
             if not user_input[CONF_CHILD_NAME] or not user_input[CONF_CHILD_SHORTCUT]:
-                return self.async_show_form(step_id="user", data_schema=self._schema(user_input), errors={"base": "invalid_child"})
+                return self.async_show_form(
+                    step_id="user",
+                    data_schema=self._schema(user_input),
+                    errors={"base": "invalid_child"},
+                )
             return self.async_create_entry(
                 title=f"Schulportal Hessen – {user_input[CONF_CHILD_NAME]} ({user_input[CONF_CHILD_SHORTCUT]})",
                 data=user_input,
@@ -36,14 +44,19 @@ class SphConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _schema(self, values: dict[str, Any] | None = None):
         values = values or {}
-        return vol.Schema({
-            vol.Required(CONF_CHILD_NAME, default=values.get(CONF_CHILD_NAME, "")): str,
-            vol.Required(CONF_CHILD_SHORTCUT, default=values.get(CONF_CHILD_SHORTCUT, "")): str,
-            vol.Required(CONF_SCHOOL_ID, default=values.get(CONF_SCHOOL_ID, "")): str,
-            vol.Required(CONF_USERNAME, default=values.get(CONF_USERNAME, "")): str,
-            vol.Required(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
-            vol.Required(CONF_UPDATE_INTERVAL, default=values.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
-        })
+        return vol.Schema(
+            {
+                vol.Required(CONF_CHILD_NAME, default=values.get(CONF_CHILD_NAME, "")): str,
+                vol.Required(CONF_CHILD_SHORTCUT, default=values.get(CONF_CHILD_SHORTCUT, "")): str,
+                vol.Required(CONF_SCHOOL_ID, default=values.get(CONF_SCHOOL_ID, "")): str,
+                vol.Required(CONF_USERNAME, default=values.get(CONF_USERNAME, "")): str,
+                vol.Required(CONF_PASSWORD, default=values.get(CONF_PASSWORD, "")): str,
+                vol.Required(
+                    CONF_UPDATE_INTERVAL,
+                    default=values.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+            }
+        )
 
     @staticmethod
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
@@ -52,17 +65,78 @@ class SphConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 class SphOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        current = self.config_entry.data
+
         if user_input is not None:
-            data = dict(self.config_entry.data)
-            data[CONF_CHILD_NAME] = user_input[CONF_CHILD_NAME].strip()
-            data[CONF_CHILD_SHORTCUT] = user_input[CONF_CHILD_SHORTCUT].strip()
+            child_name = user_input[CONF_CHILD_NAME].strip()
+            child_shortcut = user_input[CONF_CHILD_SHORTCUT].strip()
+            school_id = user_input[CONF_SCHOOL_ID].strip()
+
+            if not child_name or not child_shortcut:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._schema(user_input),
+                    errors={"base": "invalid_child"},
+                )
+            if not school_id.isdigit():
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._schema(user_input),
+                    errors={"base": "invalid_school_id"},
+                )
+
+            data = dict(current)
+            data.update(
+                {
+                    CONF_CHILD_NAME: child_name,
+                    CONF_CHILD_SHORTCUT: child_shortcut,
+                    CONF_SCHOOL_ID: school_id,
+                    CONF_USERNAME: user_input[CONF_USERNAME].strip(),
+                    CONF_PASSWORD: user_input[CONF_PASSWORD],
+                    CONF_UPDATE_INTERVAL: int(user_input[CONF_UPDATE_INTERVAL]),
+                }
+            )
+
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
                 data=data,
-                title=f"Schulportal Hessen – {data[CONF_CHILD_NAME]} ({data[CONF_CHILD_SHORTCUT]})",
+                title=f"Schulportal Hessen – {child_name} ({child_shortcut})",
             )
+
+            # Recreate the integration so the new credentials, school ID and
+            # update interval are applied immediately without requiring a HA restart.
+            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
             return self.async_create_entry(title="", data={})
-        return self.async_show_form(step_id="init", data_schema=vol.Schema({
-            vol.Required(CONF_CHILD_NAME, default=self.config_entry.data.get(CONF_CHILD_NAME, "")): str,
-            vol.Required(CONF_CHILD_SHORTCUT, default=self.config_entry.data.get(CONF_CHILD_SHORTCUT, "")): str,
-        }))
+
+        return self.async_show_form(step_id="init", data_schema=self._schema(current))
+
+    @staticmethod
+    def _schema(values: dict[str, Any]):
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_CHILD_NAME,
+                    default=values.get(CONF_CHILD_NAME, ""),
+                ): str,
+                vol.Required(
+                    CONF_CHILD_SHORTCUT,
+                    default=values.get(CONF_CHILD_SHORTCUT, ""),
+                ): str,
+                vol.Required(
+                    CONF_SCHOOL_ID,
+                    default=values.get(CONF_SCHOOL_ID, ""),
+                ): str,
+                vol.Required(
+                    CONF_USERNAME,
+                    default=values.get(CONF_USERNAME, ""),
+                ): str,
+                vol.Required(
+                    CONF_PASSWORD,
+                    default=values.get(CONF_PASSWORD, ""),
+                ): str,
+                vol.Required(
+                    CONF_UPDATE_INTERVAL,
+                    default=values.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
+                ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+            }
+        )
