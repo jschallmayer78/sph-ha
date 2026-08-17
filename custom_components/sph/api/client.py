@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
+import io
 import logging
 import random
 import re
@@ -162,30 +164,141 @@ class SphClient:
 
     @staticmethod
     def _school_year_start_year(value: datetime) -> int:
-        """Return the first calendar year of the current German school year.
-
-        Schulportal Hessen names the school year by its starting year:
-        2026/2027 -> year=2026, 2027/2028 -> year=2027.
-        August is used as the school-year boundary so the calendar year is
-        never confused with the school year.
-        """
+        """Return the first calendar year of the current German school year."""
         return value.year if value.month >= 8 else value.year - 1
 
-    def _calendar_export_url(self, reference: datetime) -> str:
-        """Build the official personal iCal export URL for the current school year."""
+    def _calendar_export_url(self, reference: datetime, export_type: str) -> str:
         school_year = self._school_year_start_year(reference)
-        url = f"{SPH_BASE}/kalender.php"
         _LOGGER.debug(
-            "SPH: verwende Kalenderexport für Schuljahr %s/%s",
+            "SPH: verwende Kalenderexport %s für Schuljahr %s/%s",
+            export_type,
             school_year,
             school_year + 1,
         )
-        return url
+        return f"{SPH_BASE}/kalender.php"
 
     def get_calendar(self, start: datetime, end: datetime):
+        """Fetch calendar data, preferring the complete CSV export and falling back to iCal."""
         self.login()
         school_year = self._school_year_start_year(start)
-        url = self._calendar_export_url(start)
+
+        try:
+            events = self._get_calendar_csv(school_year)
+            if events:
+                _LOGGER.debug(
+                    "SPH: CSV-Kalender für Schuljahr %s/%s erfolgreich geparst: %s Termine",
+                    school_year,
+                    school_year + 1,
+                    len(events),
+                )
+                return [e for e in events if self._event_overlaps(e, start, end)]
+            _LOGGER.warning("SPH: CSV-Kalender für Schuljahr %s/%s enthält keine Termine; versuche iCal-Fallback", school_year, school_year + 1)
+        except Exception as err:
+            _LOGGER.warning("SPH: CSV-Kalender konnte nicht verarbeitet werden: %s; versuche iCal-Fallback", err)
+
+        events = self._get_calendar_ical(school_year)
+        return [e for e in events if self._event_overlaps(e, start, end)]
+
+    def _get_calendar_csv(self, school_year: int):
+        url = self._calendar_export_url(datetime(school_year, 8, 1), "csv")
+        response = self.session.get(
+            url,
+            params={"a": "export", "export": "csv", "year": school_year},
+            allow_redirects=True,
+            timeout=30,
+        )
+        _LOGGER.debug(
+            "SPH: CSV-Export für Schuljahr %s/%s HTTP %s, URL=%s, Content-Type=%s, Bytes=%s",
+            school_year,
+            school_year + 1,
+            response.status_code,
+            response.url.split("?", 1)[0],
+            response.headers.get("Content-Type"),
+            len(response.content),
+        )
+        response.raise_for_status()
+        text = response.content.decode("utf-8-sig", errors="replace")
+        if not text.strip():
+            raise RuntimeError("CSV-Antwort ist leer.")
+        if "<!doctype" in text[:500].lower() or "<html" in text[:500].lower():
+            text = self._decrypt_tags(text)
+        if not text.strip() or "Von_Datum" not in text:
+            raise RuntimeError("CSV-Antwort enthält keine erwarteten Kalenderdaten.")
+        return self._parse_csv(text)
+
+    @classmethod
+    def _parse_csv(cls, text):
+        sample = text[:4096]
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,\t")
+        except csv.Error:
+            dialect = csv.excel
+            dialect.delimiter = ";"
+        reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+        if not reader.fieldnames:
+            return []
+
+        # Normalize BOM/whitespace and tolerate minor header variations.
+        field_map = {re.sub(r"^\\ufeff", "", (name or "")).strip().lower(): name for name in reader.fieldnames}
+
+        def value(row, *names):
+            for name in names:
+                original = field_map.get(name.lower())
+                if original is not None:
+                    return (row.get(original) or "").strip()
+            return ""
+
+        events = []
+        for row in reader:
+            date_start = value(row, "Von_Datum", "Von Datum", "Startdatum")
+            date_end = value(row, "Bis_Datum", "Bis Datum", "Enddatum") or date_start
+            time_start = value(row, "Von_Uhrzeit", "Von Uhrzeit", "Startzeit")
+            time_end = value(row, "Bis_Uhrzeit", "Bis Uhrzeit", "Endzeit")
+            summary = value(row, "Titel", "Title")
+            if not date_start or not summary:
+                continue
+            start = cls._parse_csv_datetime(date_start, time_start)
+            end = cls._parse_csv_datetime(date_end, time_end, end_of_day=not bool(time_end))
+            if not start or not end:
+                continue
+            events.append({
+                "start": start,
+                "end": end,
+                "all_day": not bool(time_start),
+                "summary": summary,
+                "description": value(row, "Beschreibung", "Description"),
+                "location": value(row, "Ort", "Location"),
+                "uid": value(row, "UID", "Uid"),
+            })
+        return events
+
+    @staticmethod
+    def _parse_csv_datetime(date_value, time_value="", end_of_day=False):
+        date_value = date_value.strip()
+        time_value = time_value.strip()
+        formats = ["%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y", "%Y/%m/%d"]
+        parsed_date = None
+        for fmt in formats:
+            try:
+                parsed_date = datetime.strptime(date_value, fmt)
+                break
+            except ValueError:
+                continue
+        if parsed_date is None:
+            return None
+        if time_value:
+            for fmt in ("%H:%M", "%H:%M:%S"):
+                try:
+                    parsed_time = datetime.strptime(time_value, fmt).time()
+                    return datetime.combine(parsed_date.date(), parsed_time).isoformat()
+                except ValueError:
+                    continue
+        if end_of_day:
+            return datetime.combine(parsed_date.date(), datetime.max.time()).isoformat()
+        return parsed_date.isoformat()
+
+    def _get_calendar_ical(self, school_year: int):
+        url = self._calendar_export_url(datetime(school_year, 8, 1), "ical")
         response = self.session.get(
             url,
             params={"a": "export", "export": "ical", "year": school_year},
@@ -211,8 +324,7 @@ class SphClient:
             raise RuntimeError(
                 f"Der persönliche Schulkalender für das Schuljahr {school_year}/{school_year + 1} konnte nicht als iCal abgerufen werden."
             )
-        events = self._parse_ical(text)
-        return [e for e in events if self._event_overlaps(e, start, end)]
+        return self._parse_ical(text)
 
     @staticmethod
     def _event_overlaps(event, start, end):
