@@ -238,7 +238,6 @@ class SphClient:
         if not reader.fieldnames:
             return []
 
-        # Normalize BOM/whitespace and tolerate minor header variations.
         field_map = {re.sub(r"^\\ufeff", "", (name or "")).strip().lower(): name for name in reader.fieldnames}
 
         def value(row, *names):
@@ -268,6 +267,8 @@ class SphClient:
                 "summary": summary,
                 "description": value(row, "Beschreibung", "Description"),
                 "location": value(row, "Ort", "Location"),
+                "art": value(row, "Art", "art", "Kategorie", "Category", "Typ", "Type"),
+                "verantwortlich": value(row, "Verantwortlich", "verantwortlich", "Verantwortlicher", "Responsible"),
                 "uid": value(row, "UID", "Uid"),
             })
         return events
@@ -362,15 +363,26 @@ class SphClient:
             if name == "DTSTART":
                 current["start"] = cls._parse_ical_datetime(value)
                 current["all_day"] = len(value) == 8 and value.isdigit()
-            elif name == "DTEND": current["end"] = cls._parse_ical_datetime(value)
-            elif name == "SUMMARY": current["summary"] = cls._ical_unescape(value)
-            elif name == "DESCRIPTION": current["description"] = cls._ical_unescape(value)
-            elif name == "LOCATION": current["location"] = cls._ical_unescape(value)
-            elif name == "UID": current["uid"] = value
+            elif name == "DTEND":
+                current["end"] = cls._parse_ical_datetime(value)
+            elif name == "SUMMARY":
+                current["summary"] = cls._ical_unescape(value)
+            elif name == "DESCRIPTION":
+                current["description"] = cls._ical_unescape(value)
+            elif name == "LOCATION":
+                current["location"] = cls._ical_unescape(value)
+            elif name == "UID":
+                current["uid"] = value
+            elif name in ("CATEGORIES", "CATEGORY"):
+                current["art"] = cls._ical_unescape(value)
+            elif name in ("ORGANIZER", "X-RESPONSIBLE", "X-VERANTWORTLICH"):
+                current["verantwortlich"] = cls._ical_unescape(value)
         for event in events:
             event.setdefault("end", event["start"])
             event.setdefault("description", "")
             event.setdefault("location", "")
+            event.setdefault("art", "")
+            event.setdefault("verantwortlich", "")
             event.setdefault("uid", "")
         return events
 
