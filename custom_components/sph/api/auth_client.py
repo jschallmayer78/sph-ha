@@ -10,13 +10,33 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class SphAuthClient(SphClient):
-    """SPH client using the login flow used by the previously working integration.
+    """SPH client using the proven authentication bootstrap flow.
 
-    Schulportal Hessen creates the authentication redirect in a bootstrap
-    session.  The resulting one-time URL is then consumed by the main session.
-    This is intentionally kept separate from the generic SphClient so the
-    shared API can be changed without changing the proven authentication flow.
+    The same client instance is shared by the timetable and calendar
+    coordinators. The authenticated session is therefore reused instead of
+    performing the complete login handshake once per module.
     """
+
+    def __init__(self, school_id, username, password):
+        super().__init__(school_id, username, password)
+        self._logged_in = False
+
+    def login(self, force: bool = False):
+        """Authenticate once and reuse the session for all SPH modules."""
+        if self._logged_in and not force:
+            _LOGGER.debug("SPH: verwende bestehende Login-Session für Benutzer %s", self.username)
+            return
+
+        self._logged_in = False
+        login_url = self._get_login_url()
+        response = self.session.get(login_url, allow_redirects=False, timeout=15)
+        _LOGGER.debug("SPH: Ziel der Login-Weiterleitung HTTP %s, URL=%s", response.status_code, login_url)
+        if response.status_code not in (200, 301, 302, 303, 307, 308):
+            raise RuntimeError("SPH-Anmeldung konnte nicht abgeschlossen werden.")
+
+        _LOGGER.debug("SPH: Login erfolgreich für Benutzer %s", self.username)
+        self._handshake()
+        self._logged_in = True
 
     def _get_login_url(self):
         _LOGGER.debug("SPH: starte Login-Handshake für Schulnummer %s", self.school_id)
