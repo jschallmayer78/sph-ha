@@ -6,7 +6,7 @@ import logging
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from ..api.client import SphClient
-from ..const import CONF_UPDATE_INTERVAL
+from ..const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +53,9 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
             hass,
             logger=_LOGGER,
             name="Schulportal Hessen Kalender",
-            update_interval=timedelta(minutes=int(entry.data.get(CONF_UPDATE_INTERVAL, 15))),
+            update_interval=timedelta(
+                minutes=int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
+            ),
         )
 
     async def _async_update_data(self):
@@ -70,13 +72,10 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
                 end.date(),
             )
 
-            # Pass the school year explicitly. This prevents the API client from
-            # accidentally choosing the previous school year based on the range.
             events = await self.hass.async_add_executor_job(
                 self.client.get_calendar, start, end, school_year_start
             )
 
-            # Keep only events whose own start lies inside the effective school-year range.
             start_iso = start.isoformat()
             end_iso = end.isoformat()
             events = [
@@ -93,4 +92,7 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
             )
             return events
         except Exception as err:
+            # Raising UpdateFailed makes DataUpdateCoordinator retain its last
+            # successful result. A temporary outage therefore does not erase
+            # already available calendar data.
             raise UpdateFailed(str(err)) from err
