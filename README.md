@@ -37,11 +37,17 @@ Für jedes Kind wird ein Config-Entry der gemeinsamen Integration angelegt. Ben�
 - Kürzel des Kindes
 - Aktualisierungsintervall
 
+Das Standard-Aktualisierungsintervall beträgt **60 Minuten** und kann pro Config-Entry angepasst werden.
+
 Eine Klassenangabe ist nicht erforderlich: Das Schülerkonto ist im Schulportal bereits seinem persönlichen Stundenplan zugeordnet.
 
-Die Zugangsdaten werden innerhalb des Config-Entries gemeinsam von allen aktivierten Modulen verwendet. Dadurch muss der Kalender nicht separat angemeldet werden.
+Die Zugangsdaten werden innerhalb des Config-Entries gemeinsam von allen aktivierten Modulen verwendet. Stundenplan und Kalender verwenden dabei dieselbe authentifizierte HTTP-Session, sodass bei einer Aktualisierung nicht zweimal hintereinander ein Login durchgeführt werden muss.
 
 Mehrere Kinder sind möglich, indem für jedes Kind ein weiterer Config-Entry angelegt wird.
+
+## Verhalten bei Verbindungsproblemen
+
+Die Integration ist so ausgelegt, dass ein kurzfristiger Ausfall der Internetverbindung oder des Schulportals die zuletzt erfolgreich abgerufenen Daten nicht löscht. Ein fehlgeschlagener Refresh wird als `UpdateFailed` behandelt; `DataUpdateCoordinator` behält dabei die zuletzt erfolgreichen Daten. Sobald das Schulportal wieder erreichbar ist, werden die Daten beim nächsten regulären Refresh aktualisiert.
 
 ## Module
 
@@ -63,7 +69,27 @@ Für dasselbe Kind wird zusätzlich ein Sensor bereitgestellt, beispielsweise:
 sensor.schulkalender_maxim_mk
 ```
 
-Die Attribute `termine` enthalten normalisierte persönliche Kalendertermine einschließlich Beginn, Ende, Ganztag, Beschreibung, Ort und UID. Der Kalender wird über den authentifizierten iCalendar-Export des Schulportals abgerufen.
+Der Kalender verwendet den **aktuellen hessischen Schuljahreszeitraum** und verwechselt das Schuljahr nicht mit dem Kalenderjahr. Der passende Schuljahresbeginn wird anhand der offiziellen hessischen Sommerferien bestimmt. Der CSV-Export des Schulportals wird bevorzugt verwendet; iCalendar dient als Fallback.
+
+Jeder Termin enthält unter anderem:
+
+- `start`
+- `end`
+- `all_day`
+- `summary`
+- `description`
+- `location`
+- `art`
+- `verantwortlich`
+- `uid`
+
+`art` und `verantwortlich` bleiben ausdrücklich erhalten, da sie später für Filter verwendet werden können.
+
+### Hinweis zum 16-KiB-Limit von Home Assistant
+
+Ein vollständiges Schuljahr kann deutlich mehr als 16 KiB an Sensor-Attributen erzeugen. Home Assistant/Recorder speichert solche großen State-Attribute nicht zuverlässig. Deshalb enthält das Sensorattribut `termine` eine kompakte Vorschau der ersten 50 Termine. Zusätzlich stehen `termine_gesamt`, `termine_weitere`, `arten` und `verantwortliche` zur Verfügung.
+
+Die vollständige Terminliste bleibt intern im Kalender-`DataUpdateCoordinator` erhalten und wird bei jedem erfolgreichen Abruf aktualisiert. Für eine spätere Kalenderkarte bzw. Filterfunktionen sollte daher direkt der Kalender-Coordinator bzw. eine dedizierte Home-Assistant-Kalenderentität verwendet werden, statt alle 191+ Termine in Sensorattribute zu packen.
 
 ## Lovelace
 
@@ -89,12 +115,13 @@ Für Home Assistant 2026.2+ registriert die gemeinsame Integration die JavaScrip
 
 Der gemeinsame Bereich `api/` kapselt die SPH-Kommunikation:
 
-- Login und Session
+- Login und gemeinsame Session
 - RSA/AES-Handshake
 - Entschlüsselung von `<encoded>`-Bereichen
 - HTTP-Kommunikation
 - Stundenplanabruf
-- iCalendar-Abruf und Parsing
+- CSV-Kalenderabruf und iCalendar-Fallback
+- Parsing und Normalisierung der Kalenderdaten
 
 Die Module verwenden denselben `SphClient`. Netzwerkzugriffe werden über Home Assistants Executor ausgeführt, damit keine blockierenden `requests`- oder Kryptografie-Aufrufe im Event Loop stattfinden.
 
