@@ -1,13 +1,13 @@
 {
   "domain": "sph",
   "name": "Schulportal Hessen",
-  "version": "0.3.1",
-  "documentation": "https://github.com/leonsio/sph-ha",
-  "issue_tracker": "https://github.com/leonsio/sph-ha/issues",
-  "requirements": ["pycryptodome==3.23.0"],
   "codeowners": ["@leonsio"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "lovelace"],
+  "documentation": "https://github.com/leonsio/sph-ha",
+  "integration_type": "hub",
+  "issue_tracker": "https://github.com/leonsio/sph-ha/issues",
   "iot_class": "cloud_polling",
-  "integration_type": "hub"
+  "requirements": ["pycryptodome==3.23.0"],
+  "version": "0.3.1"
 }
