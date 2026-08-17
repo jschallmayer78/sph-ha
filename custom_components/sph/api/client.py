@@ -160,66 +160,42 @@ class SphClient:
             raise RuntimeError("Kein Stundenplan für dieses Konto verfügbar. Die SPH-Anmeldung war erfolgreich, aber stundenplan.php enthält weder #all noch #own.")
         return {"week_badge": badge.get_text(" ", strip=True) if badge else None, "all": self._parse(all_table) if all_table else [], "own": self._parse(own_table) if own_table else []}
 
-    def _calendar_export_url(self):
-        """Find the personal iCal export URL from the logged-in calendar page.
+    @staticmethod
+    def _school_year_start_year(value: datetime) -> int:
+        """Return the first calendar year of the current German school year.
 
-        SPH normally exposes a tokenized URL such as
-        kalender.php?i=<school>&a=ical&t=<token>.  Calling a=ical without
-        the token can return the normal HTML calendar instead of ICS.
+        Schulportal Hessen names the school year by its starting year:
+        2026/2027 -> year=2026, 2027/2028 -> year=2027.
+        August is used as the school-year boundary so the calendar year is
+        never confused with the school year.
         """
-        page = self.session.get(
-            f"{SPH_BASE}/kalender.php",
-            params={"i": self.school_id},
-            allow_redirects=True,
-            timeout=20,
-        )
+        return value.year if value.month >= 8 else value.year - 1
+
+    def _calendar_export_url(self, reference: datetime) -> str:
+        """Build the official personal iCal export URL for the current school year."""
+        school_year = self._school_year_start_year(reference)
+        url = f"{SPH_BASE}/kalender.php"
         _LOGGER.debug(
-            "SPH: Kalenderseite HTTP %s, URL=%s, Content-Type=%s",
-            page.status_code,
-            page.url,
-            page.headers.get("Content-Type"),
+            "SPH: verwende Kalenderexport für Schuljahr %s/%s",
+            school_year,
+            school_year + 1,
         )
-        page.raise_for_status()
-        html = self._decrypt_tags(page.text)
-        soup = BeautifulSoup(html, "html.parser")
-
-        candidates = []
-        for anchor in soup.find_all("a", href=True):
-            href = unescape(anchor["href"])
-            parsed = urlparse(href)
-            query = parse_qs(parsed.query)
-            if query.get("a", [""])[0].lower() in {"ical", "ics"}:
-                candidates.append(urljoin(page.url, href))
-
-        # Some SPH versions render the export link in JavaScript instead of
-        # as a normal anchor. Look for the same tokenized URL in the HTML.
-        for match in re.finditer(r"(?:kalender\.php[^\"'\s<>]+)", html, re.I):
-            href = unescape(match.group(0))
-            parsed = urlparse(href if href.startswith("http") else urljoin(SPH_BASE + "/", href))
-            query = parse_qs(parsed.query)
-            if query.get("a", [""])[0].lower() in {"ical", "ics"}:
-                candidates.append(parsed.geturl())
-
-        # Prefer a tokenized personal export. Do not log the token itself.
-        candidates = list(dict.fromkeys(candidates))
-        candidates.sort(key=lambda url: ("t=" not in url, len(url)))
-        if candidates:
-            chosen = candidates[0]
-            _LOGGER.debug(
-                "SPH: persönlicher iCal-Export gefunden (tokenisiert=%s)",
-                "t=" in chosen,
-            )
-            return chosen
-
-        _LOGGER.debug("SPH: Kein iCal-Link auf kalender.php gefunden; verwende Fallback ohne Token")
-        return f"{SPH_BASE}/kalender.php?i={self.school_id}&a=ical"
+        return url
 
     def get_calendar(self, start: datetime, end: datetime):
         self.login()
-        url = self._calendar_export_url()
-        response = self.session.get(url, allow_redirects=True, timeout=30)
+        school_year = self._school_year_start_year(start)
+        url = self._calendar_export_url(start)
+        response = self.session.get(
+            url,
+            params={"a": "export", "export": "ical", "year": school_year},
+            allow_redirects=True,
+            timeout=30,
+        )
         _LOGGER.debug(
-            "SPH: iCal-Export HTTP %s, URL=%s, Content-Type=%s, Bytes=%s",
+            "SPH: iCal-Export für Schuljahr %s/%s HTTP %s, URL=%s, Content-Type=%s, Bytes=%s",
+            school_year,
+            school_year + 1,
             response.status_code,
             response.url.split("?", 1)[0],
             response.headers.get("Content-Type"),
@@ -231,8 +207,10 @@ class SphClient:
             text = self._decrypt_tags(response.text)
         if "BEGIN:VCALENDAR" not in text:
             snippet = re.sub(r"\s+", " ", text[:300])
-            _LOGGER.debug("SPH: iCal-Antwort enthält kein VCALENDAR: %s", snippet)
-            raise RuntimeError("Der persönliche Schulkalender konnte nicht als iCal abgerufen werden.")
+            _LOGGER.debug("SPH: iCal-Antwort für Schuljahr %s enthält kein VCALENDAR: %s", school_year, snippet)
+            raise RuntimeError(
+                f"Der persönliche Schulkalender für das Schuljahr {school_year}/{school_year + 1} konnte nicht als iCal abgerufen werden."
+            )
         events = self._parse_ical(text)
         return [e for e in events if self._event_overlaps(e, start, end)]
 
