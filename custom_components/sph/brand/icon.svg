@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Schulportal Hessen">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d6efd"/>
+      <stop offset="1" stop-color="#073b91"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e30613"/>
+      <stop offset="1" stop-color="#ff3344"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="488" height="488" rx="96" fill="url(#bg)"/>
+  <!-- school cap -->
+  <path d="M104 126 256 72l152 54-152 55z" fill="#fff"/>
+  <path d="M151 165v48c45 28 165 28 210 0v-48l-105 38z" fill="#fff"/>
+  <path d="M395 126v74" stroke="#fff" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="395" cy="210" r="12" fill="#fff"/>
+  <!-- calendar -->
+  <rect x="78" y="250" width="270" height="178" rx="26" fill="#fff"/>
+  <rect x="78" y="250" width="270" height="48" rx="26" fill="#dceaff"/>
+  <path d="M130 234v40M296 234v40" stroke="#fff" stroke-width="18" stroke-linecap="round"/>
+  <g fill="#0d6efd">
+    <rect x="110" y="325" width="28" height="28" rx="5"/>
+    <rect x="157" y="325" width="28" height="28" rx="5"/>
+    <rect x="204" y="325" width="28" height="28" rx="5"/>
+    <rect x="251" y="325" width="28" height="28" rx="5"/>
+    <rect x="110" y="370" width="28" height="28" rx="5"/>
+    <rect x="157" y="370" width="28" height="28" rx="5"/>
+  </g>
+  <rect x="204" y="370" width="28" height="28" rx="5" fill="#e30613"/>
+  <!-- clock -->
+  <circle cx="365" cy="365" r="82" fill="#fff" stroke="#0d6efd" stroke-width="12"/>
+  <path d="M365 320v48l31 20" fill="none" stroke="#073b91" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Hessen-inspired lion silhouette -->
+  <path d="M401 112c22 2 34 14 31 28-3 12-16 17-26 12 8 12 7 26-4 33-9 6-20 3-26-7-1 19-10 31-24 32-12 1-21-8-22-20 8 2 15-1 20-9-8-4-13-12-12-21 1-11 10-18 22-17 4-14 15-27 41-31z" fill="#fff" opacity=".95"/>
+  <!-- Hessen-like red wave -->
+  <path d="M20 420c100 42 182 50 263 24 77-24 131-70 229-39v65c-91-24-143 20-222 42-88 25-177 17-270-23z" fill="url(#wave)"/>
+  <path d="M20 405c100 42 182 50 263 24 77-24 131-70 229-39" fill="none" stroke="#fff" stroke-width="10" opacity=".9"/>
+</svg>
