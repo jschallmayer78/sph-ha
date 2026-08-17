@@ -11,10 +11,8 @@ from ..const import CONF_UPDATE_INTERVAL
 _LOGGER = logging.getLogger(__name__)
 
 
-# Official Hessian summer holidays.  The calendar export contains some
-# events from the preceding school year (most notably the summer holidays),
-# so using August 1st as the boundary is not sufficient.  These dates are
-# taken from the Hessian Ministry of Education's published holiday schedule.
+# Official Hessian summer holidays. The calendar export can contain events
+# from the preceding school year, most notably the summer holidays.
 HESSEN_SOMMERFERIEN = {
     2025: (date(2025, 7, 7), date(2025, 8, 15)),
     2026: (date(2026, 6, 29), date(2026, 8, 7)),
@@ -27,35 +25,30 @@ HESSEN_SOMMERFERIEN = {
 
 def _current_school_year(today: date) -> int:
     """Return the first calendar year of the current Hessian school year."""
-    # Before the summer holidays of year N the current school year is N-1.
-    # During/after the summer holidays it is still N-1 until the holidays
-    # have ended.  This matters especially in July/August.
     for year, (_, summer_end) in HESSEN_SOMMERFERIEN.items():
         if summer_end < today <= date(year, 8, 31):
             return year
-        if today <= summer_end and today >= date(year, 6, 1):
+        if date(year, 6, 1) <= today <= summer_end:
             return year - 1
 
     return today.year if today.month >= 8 else today.year - 1
 
 
 def _school_year_bounds(school_year_start: int) -> tuple[datetime, datetime]:
-    """Return the effective beginning/end of a Hessian school year."""
-    # The first day after the previous summer holidays is the beginning of
-    # the school year.  If it falls on a weekend, the calendar simply starts
-    # collecting events from that date; actual events normally begin Monday.
+    """Return the effective beginning and end of a Hessian school year."""
     previous_summer = HESSEN_SOMMERFERIEN.get(school_year_start)
     next_summer = HESSEN_SOMMERFERIEN.get(school_year_start + 1)
 
-    if previous_summer:
-        start_date = previous_summer[1] + timedelta(days=1)
-    else:
-        start_date = date(school_year_start, 8, 1)
-
-    if next_summer:
-        end_date = next_summer[0] - timedelta(days=1)
-    else:
-        end_date = date(school_year_start + 1, 7, 31)
+    start_date = (
+        previous_summer[1] + timedelta(days=1)
+        if previous_summer
+        else date(school_year_start, 8, 1)
+    )
+    end_date = (
+        next_summer[0] - timedelta(days=1)
+        if next_summer
+        else date(school_year_start + 1, 7, 31)
+    )
 
     return datetime.combine(start_date, datetime.min.time()), datetime.combine(
         end_date, datetime.max.time()
@@ -93,12 +86,24 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
                 self.client.get_calendar, start, end
             )
 
+            # client.get_calendar deliberately uses an overlap comparison.
+            # The export for a new school year still contains the preceding
+            # summer holidays, which can overlap the first school-year day.
+            # Keep only events whose own start lies inside the current year.
+            start_iso = start.isoformat()
+            end_iso = end.isoformat()
+            events = [
+                event
+                for event in (events or [])
+                if start_iso <= event.get("start", "") <= end_iso
+            ]
+
             _LOGGER.debug(
                 "SPH: Kalender liefert für Schuljahr %s/%s insgesamt %d Termine",
                 school_year_start,
                 school_year_start + 1,
-                len(events or []),
+                len(events),
             )
-            return events or []
+            return events
         except Exception as err:
             raise UpdateFailed(str(err)) from err
