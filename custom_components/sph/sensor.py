@@ -9,9 +9,6 @@ SUBJECT_NAMES = {
     "M": "Mathematik", "D": "Deutsch", "E": "Englisch", "F": "Französisch", "L": "Latein", "G": "Geschichte", "GE": "Geschichte", "EK": "Erdkunde", "POW": "Politik und Wirtschaft", "PW": "Politik und Wirtschaft", "PH": "Physik", "CH": "Chemie", "BIO": "Biologie", "SP": "Sport", "MU": "Musik", "ETH": "Ethik", "RKA": "Religion katholisch", "REV": "Religion evangelisch", "RELI": "Religion", "INF": "Informatik", "KU": "Kunst", "LRS": "Lese-Rechtschreib-Schwäche",
 }
 
-# Home Assistant limits state attributes stored by Recorder to 16 KiB. A full
-# school-year calendar can exceed that limit, so the entity deliberately exposes
-# a useful preview while the coordinator keeps the complete event list in memory.
 CALENDAR_ATTRIBUTE_LIMIT = 50
 
 
@@ -41,7 +38,6 @@ def _child_label(entry) -> str:
 
 
 def _calendar_preview(events):
-    """Return a compact, recorder-safe preview of calendar events."""
     preview = []
     for event in sorted(events or [], key=lambda item: str(item.get("start", "")))[:CALENDAR_ATTRIBUTE_LIMIT]:
         preview.append({
@@ -85,6 +81,7 @@ class SphTimetableSensor(CoordinatorEntity, SensorEntity):
         return {
             "kind": self.entry.data.get(CONF_CHILD_NAME, ""),
             "kind_kürzel": self.entry.data.get(CONF_CHILD_SHORTCUT, ""),
+            "klasse": data.get("klasse", ""),
             "wochenkennung": data.get("week_badge"),
             "tage": enrich_days(data.get("all", [])),
             "eigener_plan": enrich_days(data.get("own", [])),
