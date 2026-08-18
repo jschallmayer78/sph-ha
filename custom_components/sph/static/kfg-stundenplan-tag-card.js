@@ -5,14 +5,82 @@ class KfgStundenplanTagCard extends HTMLElement {
   set hass(hass){this._hass=hass;this._render();}
   _startTimer(){this._stopTimer();this._timer=window.setInterval(()=>this._render(),30000);}
   _stopTimer(){if(this._timer!==null){window.clearInterval(this._timer);this._timer=null;}}
-  _render(){const hass=this._hass;if(!hass||!this.config||!this.shadowRoot)return;const entity=this._findEntity(hass),attrs=entity?.attributes||{},days=Array.isArray(attrs.eigener_plan)?attrs.eigener_plan:[],week=attrs.wochenkennung,child=attrs.kind_kürzel||attrs.kind||this.config.child||"",title=this.config.title||(child?`Tagesstundenplan – ${child}`:"Tagesstundenplan"),selected=this._getNextTeachingDay(days,week);this.shadowRoot.innerHTML=`<style>:host{display:block}.content{padding:12px 16px}.day-title{font-size:1.15rem;font-weight:600;margin-bottom:10px}.kfg{font-size:.72rem;color:var(--secondary-text-color);margin-bottom:6px}.lesson{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider-color)}.lesson-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1}.time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}.main small{color:var(--secondary-text-color)}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}.empty{color:var(--secondary-text-color)}</style><ha-card header="${this._escape(title)}"><div class="content"><div class="kfg">KFG Anpassung${week?` · Woche ${this._escape(week)}`:""}</div>${selected?`<div class="day-title">${this._formatDate(selected.date)}</div>${this._renderDay(selected.lessons,week)}`:`<div class="empty">Kein Unterricht geplant.</div>`}</div></ha-card>`;}
+
+  _render(){
+    const hass=this._hass;if(!hass||!this.config||!this.shadowRoot)return;
+    const entity=this._findEntity(hass),attrs=entity?.attributes||{},days=Array.isArray(attrs.eigener_plan)?attrs.eigener_plan:[],week=attrs.wochenkennung;
+    const child=attrs.kind_kürzel||attrs.kind||this.config.child||"",title=this.config.title||(child?`Tagesstundenplan – ${child}`:"Tagesstundenplan");
+    const substitutions=this._getSubstitutionContext(hass,attrs),selected=this._getNextTeachingDay(days,week);
+    this.shadowRoot.innerHTML=`<style>
+      :host{display:block}.content{padding:12px 16px}.day-title{font-size:1.15rem;font-weight:600;margin-bottom:10px}.kfg{font-size:.72rem;color:var(--secondary-text-color);margin-bottom:6px}
+      .lesson{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--divider-color)}.lesson-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1}
+      .time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}.main small{color:var(--secondary-text-color)}
+      .badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;align-items:center}.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}
+      .sub-badge{background:var(--warning-color,#f0ad00)}.cancelled{text-decoration:line-through;opacity:.65}.changed{border-left:3px solid var(--warning-color,#f0ad00);padding-left:7px}.empty{color:var(--secondary-text-color)}
+    </style><ha-card header="${this._escape(title)}"><div class="content"><div class="kfg">KFG Anpassung${week?` · Woche ${this._escape(week)}`:""}</div>${selected?`<div class="day-title">${this._formatDate(selected.date)}</div>${this._renderDay(selected.lessons,week,substitutions,selected.index)}`:`<div class="empty">Kein Unterricht geplant.</div>`}</div></ha-card>`;
+  }
+
   _isActive(lesson,week){const badge=lesson?.badge;if(badge===null||badge===undefined||badge===""||!week)return true;const values=Array.isArray(badge)?badge:[...String(badge).split(/[,;/|]+/).map(x=>x.trim()).filter(Boolean)];return values.some(x=>x.toUpperCase()===String(week).toUpperCase());}
-  _getNextTeachingDay(days,week){const now=new Date(),today=now.getDay(),current=today===0?6:today-1,active=t=> (Array.isArray(t)?t:[]).filter(x=>this._isActive(x,week)),todayLessons=active(days[current]);if(today===0||today===6||!todayLessons.length){for(let offset=1;offset<=7;offset++){const index=(current+offset)%7,lessons=active(days[index]);if(lessons.length)return this._selectionFor(index,lessons,now,offset);}}else{const lastEnd=todayLessons.reduce((latest,l)=>{const end=this._timeToMinutes(l?.end);return end!==null&&(latest===null||end>latest)?end:latest;},null),nowMinutes=now.getHours()*60+now.getMinutes();if(lastEnd===null||nowMinutes<lastEnd)return this._selectionFor(current,todayLessons,now,0);for(let offset=1;offset<=7;offset++){const index=(current+offset)%7,lessons=active(days[index]);if(lessons.length)return this._selectionFor(index,lessons,now,offset);}}return null;}
+
+  _getNextTeachingDay(days,week){
+    const now=new Date(),today=now.getDay(),current=today===0?6:today-1,active=t=>(Array.isArray(t)?t:[]).filter(x=>this._isActive(x,week)),todayLessons=active(days[current]);
+    if(today===0||today===6||!todayLessons.length){for(let offset=1;offset<=7;offset++){const index=(current+offset)%7,lessons=active(days[index]);if(lessons.length)return this._selectionFor(index,lessons,now,offset);}}
+    else{const lastEnd=todayLessons.reduce((latest,l)=>{const end=this._timeToMinutes(l?.end);return end!==null&&(latest===null||end>latest)?end:latest;},null),nowMinutes=now.getHours()*60+now.getMinutes();if(lastEnd===null||nowMinutes<lastEnd)return this._selectionFor(current,todayLessons,now,0);for(let offset=1;offset<=7;offset++){const index=(current+offset)%7,lessons=active(days[index]);if(lessons.length)return this._selectionFor(index,lessons,now,offset);}}
+    return null;
+  }
   _selectionFor(index,lessons,now,offset){const date=new Date(now.getFullYear(),now.getMonth(),now.getDate());date.setDate(date.getDate()+offset);return{index,date,lessons};}
   _formatDate(date){return new Intl.DateTimeFormat("de-DE",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"}).format(date);}
   _timeToMinutes(value){if(typeof value!=="string")return null;const m=value.trim().match(/^(\d{1,2}):(\d{2})/);if(!m)return null;const h=Number(m[1]),min=Number(m[2]);return h>23||min>59?null:h*60+min;}
-  _renderDay(day,week){const lessons=(day||[]).filter(x=>this._isActive(x,week));if(!lessons.length)return`<span class="empty">Kein Unterricht</span>`;const groups=[],byTime=new Map();for(const lesson of lessons){const key=`${lesson.start||""}|${lesson.end||""}`;if(!byTime.has(key)){const group={start:lesson.start||"",end:lesson.end||"",lessons:[]};byTime.set(key,group);groups.push(group);}byTime.get(key).lessons.push(lesson);}return groups.map(g=>`<div class="lesson"><span class="time">${this._escape(g.start)}–${this._escape(g.end)}</span><div class="lesson-options">${g.lessons.map(x=>`<div><span class="main"><b>${this._escape(x.fach||x.subject||"Unterricht")}</b>${this._renderBadges(x.badge)}<small>${this._escape(x.teacher||"")}${x.room?" · "+this._escape(x.room):""}</small></span></div>`).join("")}</div></div>`).join("");}
-  _renderBadges(value){if(value===null||value===undefined||value==="")return"";const values=Array.isArray(value)?value:String(value).split(/[,;/|]+/).map(x=>x.trim()).filter(Boolean);return values.length?`<span class="badges">${values.map(x=>`<span class="badge">(${this._escape(x)})</span>`).join("")}</span>`:"";}
-  _findEntity(hass){const configured=this.config.sensor||this.config.entity;if(configured&&hass.states[configured])return hass.states[configured];if(!this.config.child)return hass.states["sensor.stundenplan"];const wanted=String(this.config.child).toLowerCase();return Object.values(hass.states).find(s=>s.entity_id.startsWith("sensor.")&&s.attributes?.kind_kürzel?.toString().toLowerCase()===wanted);}
-  _escape(value){const d=document.createElement("div");d.textContent=String(value??"");return d.innerHTML;}getCardSize(){return 4;}}
-customElements.define("kfg-stundenplan-tag-card",KfgStundenplanTagCard);window.customCards=window.customCards||[];window.customCards.push({type:"kfg-stundenplan-tag-card",name:"KFG Tagesstundenplan (KFG Anpassung)",description:"Persönlicher Tagesstundenplan mit KFG-Wochenfilterung"});
+
+  _renderDay(day,week,substitutions,weekdayIndex){
+    const lessons=(day||[]).filter(x=>this._isActive(x,week));if(!lessons.length)return`<span class="empty">Kein Unterricht</span>`;
+    const groups=[],byTime=new Map();
+    for(const lesson of lessons){const key=`${lesson.start||""}|${lesson.end||""}`;if(!byTime.has(key)){const group={start:lesson.start||"",end:lesson.end||"",lessons:[]};byTime.set(key,group);groups.push(group);}byTime.get(key).lessons.push(lesson);}
+    return groups.map(g=>`<div class="lesson"><span class="time">${this._escape(g.start)}–${this._escape(g.end)}</span><div class="lesson-options">${g.lessons.map(lesson=>this._renderLesson(lesson,this._findSubstitution(lesson,weekdayIndex,substitutions))).join("")}</div></div>`).join("");
+  }
+
+  _renderLesson(lesson,substitution){
+    const cancelled=substitution?.cancelled,changed=substitution&&!cancelled,subject=substitution?.subject||lesson.fach||lesson.subject||"Unterricht",teacher=substitution?.teacher||lesson.teacher||"",room=substitution?.room||lesson.room||"",originalSubject=substitution?.originalSubject,cls=`${cancelled?"cancelled":""} ${changed?"changed":""}`.trim();
+    return `<div class="${cls}"><span class="main"><b>${this._escape(subject)}</b>${originalSubject&&originalSubject!==subject?`<small>statt ${this._escape(originalSubject)}</small>`:""}${this._renderBadges(lesson.badge,substitution)}<small>${this._escape(teacher)}${room?" · "+this._escape(room):""}</small></span></div>`;
+  }
+
+  _getSubstitutionContext(hass,timetableAttrs){
+    const plan=hass.states["sensor.vertretungsplan"],colleagues=hass.states["sensor.kfg_kollegium"];
+    if(!plan&&!colleagues)return{available:false,entries:[],teachers:{}};
+    const teacherMap=colleagues?.attributes?.lehrer&&typeof colleagues.attributes.lehrer==="object"?colleagues.attributes.lehrer:{};
+    const entries=this._extractSubstitutionEntries(plan?.attributes||{}),childClass=timetableAttrs.klasse||timetableAttrs.klassenstufe||timetableAttrs.schueler_klasse||timetableAttrs.class||"";
+    return{available:true,entries,teachers:teacherMap,childClass:String(childClass).trim()};
+  }
+  _extractSubstitutionEntries(attrs){const result=[],add=value=>{if(Array.isArray(value))value.forEach(add);else if(value&&typeof value==="object"){if(this._looksLikeSubstitution(value))result.push(value);Object.values(value).forEach(item=>{if(Array.isArray(item))item.forEach(add);});}};[attrs.today,attrs.days,attrs.weeks,attrs.current_week,attrs.next_week].forEach(add);return result;}
+  _looksLikeSubstitution(item){return Boolean(item&&(item.fach||item.fach_original||item.subject||item.klasse)&&(item.stunde||item.datum||item.art||item.vertreter||item.lehrer_nach));}
+
+  _findSubstitution(lesson,weekdayIndex,context){
+    if(!context?.available||!context.entries.length)return null;
+    const lessonSubject=this._normalise(lesson.fach||lesson.subject),lessonStart=this._normaliseTime(lesson.start),lessonEnd=this._normaliseTime(lesson.end);if(!lessonSubject)return null;
+    const candidates=context.entries.filter(item=>{
+      if(!this._matchesClass(item,context.childClass)||!this._matchesWeekday(item,weekdayIndex))return false;
+      const subjects=[item.fach_original,item.fach,item.subject,item.subject_original].filter(Boolean).map(x=>this._normalise(x));
+      if(!subjects.some(subject=>subject===lessonSubject||subject.includes(lessonSubject)||lessonSubject.includes(subject)))return false;
+      if(item.stunde&&lesson.index&&String(item.stunde).trim()!==String(lesson.index).trim())return false;
+      if(item.stunde&&lessonStart&&!this._matchesPeriodText(item.stunde,lessonStart,lessonEnd))return false;
+      return true;
+    });
+    if(!candidates.length)return null;
+    const item=candidates[0],art=String(item.art||"").trim(),lower=art.toLowerCase(),cancelled=lower.includes("entfall")||lower.includes("ausfall")||lower.includes("frei"),teacherCode=item.lehrer_nach||item.vertreter||item.teacher||"",teacher=this._teacherName(teacherCode,context.teachers),subject=item.fach||item.subject||lesson.fach||lesson.subject,originalSubject=item.fach_original||lesson.fach||lesson.subject;
+    let label=art||"Vertretung";if(!cancelled&& (lower.includes("fachwechsel")||this._normalise(subject)!==this._normalise(originalSubject)))label="Fachwechsel";
+    return{cancelled,subject:cancelled?(lesson.fach||lesson.subject):subject,originalSubject:!cancelled&&this._normalise(subject)!==this._normalise(originalSubject)?originalSubject:"",teacher:teacher||lesson.teacher||"",room:item.raum||item.room||lesson.room||"",label};
+  }
+
+  _matchesClass(item,childClass){if(!childClass||!item.klasse)return true;return String(item.klasse).split(/[,;/| ]+/).map(x=>this._normalise(x)).includes(this._normalise(childClass));}
+  _matchesWeekday(item,weekdayIndex){if(!item.datum)return true;const text=String(item.datum).toLowerCase(),names=["montag","dienstag","mittwoch","donnerstag","freitag"];if(text.includes(names[weekdayIndex]))return true;const match=text.match(/(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?/);if(!match)return true;const date=new Date();const current=date.getDay()===0?7:date.getDay();const target=weekdayIndex+1;date.setDate(date.getDate()+((target-current+7)%7));return Number(match[1])===date.getDate()&&Number(match[2])===date.getMonth()+1;}
+  _matchesPeriodText(value,start,end){const text=String(value);return text.includes(start)||(end&&text.includes(end));}
+  _teacherName(value,map){if(!value)return"";const raw=String(value).trim();return map[raw]||map[raw.toUpperCase()]||raw;}
+  _normalise(value){return String(value??"").trim().toLowerCase().replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,"");}
+  _normaliseTime(value){const m=String(value||"").match(/\d{1,2}:\d{2}/);return m?m[0]:"";}
+  _renderBadges(value,substitution){const values=value===null||value===undefined||value===""?[]:(Array.isArray(value)?value:String(value).split(/[,;/|]+/).map(x=>x.trim()).filter(Boolean));if(substitution?.label)values.push(substitution.label);return values.length?`<span class="badges">${values.map(x=>`<span class="badge ${substitution?.label===x?"sub-badge":""}">${this._escape(x===substitution?.label?x:`(${x})`)}</span>`).join("")}</span>`:"";}
+
+  _findEntity(hass){const configured=this.config.sensor||this.config.entity;if(configured&&hass.states[configured])return hass.states[configured];if(!this.config.child)return hass.states["sensor.stundenplan"];const wanted=String(this.config.child).toLowerCase();return Object.values(hass.states).find(state=>state.entity_id.startsWith("sensor.")&&state.attributes?.kind_kürzel?.toString().toLowerCase()===wanted);}
+  _escape(value){const d=document.createElement("div");d.textContent=String(value??"");return d.innerHTML;}
+  getCardSize(){return 4;}
+}
+customElements.define("kfg-stundenplan-tag-card",KfgStundenplanTagCard);window.customCards=window.customCards||[];window.customCards.push({type:"kfg-stundenplan-tag-card",name:"KFG Tagesstundenplan (KFG Anpassung)",description:"Persönlicher Tagesstundenplan mit optionalem KFG-Vertretungsplan"});
