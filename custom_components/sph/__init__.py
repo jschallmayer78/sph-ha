@@ -85,8 +85,8 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    from .kalender.coordinator import SphCalendarCoordinator
-    from .stundenplan.coordinator import SphTimetableCoordinator
+    from .module.kalender.coordinator import SphCalendarCoordinator
+    from .module.stundenplan.coordinator import SphTimetableCoordinator
 
     auth = SphAuthClient(
         entry.data[CONF_SCHOOL_ID],
