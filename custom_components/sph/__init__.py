@@ -71,6 +71,7 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
     for unique_id, prefix in (
         (f"{entry.entry_id}_timetable", "stundenplan"),
         (f"{entry.entry_id}_calendar", "schulkalender"),
+        (f"{entry.entry_id}_meinunterricht", "mein_unterricht"),
     ):
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if not entity_id:
@@ -86,6 +87,7 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .module.kalender.coordinator import SphCalendarCoordinator
+    from .module.meinunterricht.coordinator import SphMeinUnterrichtCoordinator
     from .module.stundenplan.coordinator import SphTimetableCoordinator
 
     auth = SphAuthClient(
@@ -105,10 +107,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         _LOGGER.warning("Schulportal Hessen Kalender für %s aktuell nicht verfügbar: %s", entry.title, err)
 
+    meinunterricht = SphMeinUnterrichtCoordinator(hass, entry, auth)
+    try:
+        await meinunterricht.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning("Schulportal Hessen Mein Unterricht für %s aktuell nicht verfügbar: %s", entry.title, err)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "auth": auth,
         "timetable": timetable,
         "calendar": calendar,
+        "meinunterricht": meinunterricht,
     }
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     await _migrate_sensor_entity_ids(hass, entry)
