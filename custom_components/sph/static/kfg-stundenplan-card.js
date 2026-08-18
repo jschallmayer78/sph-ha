@@ -7,23 +7,14 @@ class KfgStundenplanCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this.config || !this.shadowRoot) return;
-
     const entity = this._findEntity(hass);
     const attrs = entity?.attributes || {};
     const days = Array.isArray(attrs.eigener_plan) ? attrs.eigener_plan : [];
     const week = attrs.wochenkennung;
     const substitutions = this._getSubstitutionContext(hass, attrs);
     const title = this.config.title || (attrs.kind_kürzel ? `Stundenplan – ${attrs.kind_kürzel}` : "Stundenplan");
-
     this.shadowRoot.innerHTML = `<style>
-      :host{display:block}.content{padding:12px 16px}section{margin-bottom:16px}h3{margin:0 0 8px}
-      .lesson{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider-color)}
-      .lesson-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1}
-      .time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}
-      .main small{color:var(--secondary-text-color)}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;align-items:center}
-      .badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}
-      .sub-badge{background:var(--warning-color,#f0ad00)}.cancelled{text-decoration:line-through;opacity:.65}.changed{border-left:3px solid var(--warning-color,#f0ad00);padding-left:7px}
-      .empty{color:var(--secondary-text-color)}.error{padding:16px;color:var(--error-color)}.kfg{font-size:.72rem;color:var(--secondary-text-color);margin-left:6px}
+      :host{display:block}.content{padding:12px 16px}section{margin-bottom:16px}h3{margin:0 0 8px}.lesson{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--divider-color)}.lesson-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;flex:1}.time{min-width:92px;color:var(--secondary-text-color);white-space:nowrap}.main{display:flex;flex-direction:column;gap:2px}.main small{color:var(--secondary-text-color)}.badges{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;align-items:center}.badge{display:inline-flex;align-items:center;padding:1px 6px;border-radius:8px;background:var(--primary-color);color:var(--text-primary-color);font-size:.78rem;font-weight:600}.sub-badge{background:var(--warning-color,#f0ad00)}.cancelled{text-decoration:line-through;opacity:.65}.changed{border-left:3px solid var(--warning-color,#f0ad00);padding-left:7px}.empty{color:var(--secondary-text-color)}.error{padding:16px;color:var(--error-color)}.kfg{font-size:.72rem;color:var(--secondary-text-color);margin-left:6px}
     </style><ha-card header="${this._escape(title)}"><div class="content"><div class="kfg">KFG Anpassung${week ? ` · Woche ${this._escape(week)}` : ""}</div>${entity ? days.slice(0,5).map((day,i)=>`<section><h3>${["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"][i]}</h3>${this._renderDay(day,week,substitutions,i)}</section>`).join("") : `<div class="error">Kein passender Stundenplan gefunden.</div>`}</div></ha-card>`;
   }
 
@@ -37,147 +28,68 @@ class KfgStundenplanCard extends HTMLElement {
   _renderDay(day, week, substitutions, weekdayIndex) {
     const lessons = (day || []).filter(x => this._isActive(x, week));
     if (!lessons.length) return `<span class="empty">Kein Unterricht</span>`;
-
     const groups = [], byTime = new Map();
     for (const lesson of lessons) {
       const key = `${lesson.start || ""}|${lesson.end || ""}`;
-      if (!byTime.has(key)) {
-        const group = { start: lesson.start || "", end: lesson.end || "", lessons: [] };
-        byTime.set(key, group); groups.push(group);
-      }
+      if (!byTime.has(key)) { const group={start:lesson.start||"",end:lesson.end||"",lessons:[]}; byTime.set(key,group); groups.push(group); }
       byTime.get(key).lessons.push(lesson);
     }
-
-    return groups.map(group => `<div class="lesson"><span class="time">${this._escape(group.start)}–${this._escape(group.end)}</span><div class="lesson-options">${group.lessons.map(lesson => {
-      const substitution = this._findSubstitution(lesson, weekdayIndex, substitutions);
-      return this._renderLesson(lesson, substitution);
-    }).join("")}</div></div>`).join("");
+    return groups.map(group => `<div class="lesson"><span class="time">${this._escape(group.start)}–${this._escape(group.end)}</span><div class="lesson-options">${group.lessons.map(lesson => this._renderLesson(lesson,this._findSubstitution(lesson,weekdayIndex,substitutions))).join("")}</div></div>`).join("");
   }
 
   _renderLesson(lesson, substitution) {
-    const cancelled = substitution?.cancelled;
-    const changed = substitution && !cancelled;
-    const subject = substitution?.subject || lesson.fach || lesson.subject || "Unterricht";
-    const teacher = substitution?.teacher || lesson.teacher || "";
-    const room = substitution?.room || lesson.room || "";
-    const originalSubject = substitution?.originalSubject;
-    const typeLabel = substitution?.label;
-    const cls = `${cancelled ? "cancelled" : ""} ${changed ? "changed" : ""}`.trim();
-
-    return `<div class="${cls}"><span class="main"><b>${this._escape(subject)}</b>${originalSubject && originalSubject !== subject ? `<small>statt ${this._escape(originalSubject)}</small>` : ""}${this._renderBadges(lesson.badge, substitution)}<small>${this._escape(teacher)}${room ? " · " + this._escape(room) : ""}</small></span></div>`;
+    const cancelled=substitution?.cancelled, changed=substitution&&!cancelled, subject=substitution?.subject||lesson.fach||lesson.subject||"Unterricht", teacher=substitution?.teacher||lesson.teacher||"", room=substitution?.room||lesson.room||"", originalSubject=substitution?.originalSubject, cls=`${cancelled?"cancelled":""} ${changed?"changed":""}`.trim();
+    return `<div class="${cls}"><span class="main"><b>${this._escape(subject)}</b>${originalSubject&&originalSubject!==subject?`<small>statt ${this._escape(originalSubject)}</small>`:""}${this._renderBadges(lesson.badge,substitution)}<small>${this._escape(teacher)}${room?" · "+this._escape(room):""}</small></span></div>`;
   }
 
-  _getSubstitutionContext(hass, timetableAttrs) {
-    const plan = hass.states["sensor.vertretungsplan"];
-    const colleagues = hass.states["sensor.kfg_kollegium"];
-    if (!plan && !colleagues) return { available: false, entries: [], teachers: {} };
-
-    const teacherMap = colleagues?.attributes?.lehrer && typeof colleagues.attributes.lehrer === "object" ? colleagues.attributes.lehrer : {};
-    const entries = this._extractSubstitutionEntries(plan?.attributes || {});
-    const childClass = timetableAttrs.klasse || timetableAttrs.klassenstufe || timetableAttrs.schueler_klasse || timetableAttrs.class || "";
-    return { available: true, entries, teachers: teacherMap, childClass: String(childClass).trim() };
+  _getSubstitutionContext(hass,timetableAttrs) {
+    const plan=hass.states["sensor.vertretungsplan"], colleagues=hass.states["sensor.kfg_kollegium"];
+    if(!plan&&!colleagues)return{available:false,entries:[],teachers:{}};
+    const teacherMap=colleagues?.attributes?.lehrer&&typeof colleagues.attributes.lehrer==="object"?colleagues.attributes.lehrer:{};
+    const entries=this._extractSubstitutionEntries(plan?.attributes||{}),childClass=timetableAttrs.klasse||timetableAttrs.klassenstufe||timetableAttrs.schueler_klasse||timetableAttrs.class||"";
+    return{available:true,entries,teachers:teacherMap,childClass:String(childClass).trim()};
   }
 
   _extractSubstitutionEntries(attrs) {
-    const result = [];
-    const add = value => {
-      if (Array.isArray(value)) value.forEach(add);
-      else if (value && typeof value === "object") {
-        if (this._looksLikeSubstitution(value)) result.push(value);
-        Object.values(value).forEach(item => {
-          if (Array.isArray(item)) item.forEach(add);
-        });
-      }
+    const result=[];
+    const walk=value=>{
+      if(Array.isArray(value)){value.forEach(walk);return;}
+      if(!value||typeof value!=="object")return;
+      if(this._looksLikeSubstitution(value))result.push(value);
+      Object.values(value).forEach(walk);
     };
-    [attrs.today, attrs.days, attrs.weeks, attrs.current_week, attrs.next_week].forEach(add);
+    walk(attrs);
     return result;
   }
 
-  _looksLikeSubstitution(item) {
-    return Boolean(item && (item.fach || item.fach_original || item.subject || item.klasse) && (item.stunde || item.datum || item.art || item.vertreter || item.lehrer_nach));
-  }
+  _looksLikeSubstitution(item){return Boolean(item&&(item.fach||item.fach_original||item.subject||item.klasse)&&(item.stunde||item.datum||item.art||item.vertreter||item.lehrer_nach));}
 
-  _findSubstitution(lesson, weekdayIndex, context) {
-    if (!context?.available || !context.entries.length) return null;
-    const lessonSubject = this._normalise(lesson.fach || lesson.subject);
-    if (!lessonSubject) return null;
-    const lessonStart = this._normaliseTime(lesson.start);
-    const lessonEnd = this._normaliseTime(lesson.end);
-
-    const candidates = context.entries.filter(item => {
-      if (!this._matchesClass(item, context.childClass)) return false;
-      if (!this._matchesWeekday(item, weekdayIndex)) return false;
-      const subjects = [item.fach_original, item.fach, item.subject, item.subject_original].filter(Boolean).map(this._normalise);
-      if (!subjects.some(subject => subject === lessonSubject || subject.includes(lessonSubject) || lessonSubject.includes(subject))) return false;
-      if (item.stunde && lesson.index && String(item.stunde).trim() !== String(lesson.index).trim()) return false;
-      if (item.stunde && lessonStart && !this._matchesPeriodText(item.stunde, lessonStart, lessonEnd)) return false;
+  _findSubstitution(lesson,weekdayIndex,context) {
+    if(!context?.available||!context.entries.length)return null;
+    const lessonSubject=this._normalise(lesson.fach||lesson.subject);if(!lessonSubject)return null;
+    const candidates=context.entries.filter(item=>{
+      if(!this._matchesClass(item,context.childClass)||!this._matchesWeekday(item,weekdayIndex))return false;
+      const subjects=[item.fach_original,item.fach,item.subject,item.subject_original].filter(Boolean).map(x=>this._normalise(x));
+      if(!subjects.some(subject=>subject===lessonSubject||subject.includes(lessonSubject)||lessonSubject.includes(subject)))return false;
+      if(item.stunde&&lesson.index&&String(item.stunde).trim()!==String(lesson.index).trim())return false;
+      if(item.stunde&&!lesson.index&&!this._matchesTimeInPeriod(item.stunde,lesson))return false;
       return true;
     });
-
-    if (!candidates.length) return null;
-    const item = candidates[0];
-    const art = String(item.art || "").trim();
-    const lower = art.toLowerCase();
-    const cancelled = lower.includes("entfall") || lower.includes("ausfall") || lower.includes("frei");
-    const teacherCode = item.lehrer_nach || item.vertreter || item.teacher || "";
-    const teacher = this._teacherName(teacherCode, context.teachers);
-    const originalTeacher = this._teacherName(item.lehrer_original || "", context.teachers);
-    const subject = item.fach || item.subject || lesson.fach || lesson.subject;
-    const originalSubject = item.fach_original || lesson.fach || lesson.subject;
-
-    let label = art || "Vertretung";
-    if (!cancelled && (lower.includes("fachwechsel") || this._normalise(subject) !== this._normalise(originalSubject))) label = "Fachwechsel";
-    else if (!cancelled) label = art || "Vertretung";
-
-    return { cancelled, subject: cancelled ? (lesson.fach || lesson.subject) : subject, originalSubject: !cancelled && this._normalise(subject) !== this._normalise(originalSubject) ? originalSubject : "", teacher: teacher || lesson.teacher || "", room: item.raum || item.room || lesson.room || "", label, originalTeacher };
+    if(!candidates.length)return null;
+    const item=candidates[0],art=String(item.art||"").trim(),lower=art.toLowerCase(),cancelled=lower.includes("entfall")||lower.includes("ausfall")||lower.includes("frei"),teacherCode=item.lehrer_nach||item.vertreter||item.teacher||"",teacher=this._teacherName(teacherCode,context.teachers),subject=item.fach||item.subject||lesson.fach||lesson.subject,originalSubject=item.fach_original||lesson.fach||lesson.subject;
+    let label=art||"Vertretung";if(!cancelled&&(lower.includes("fachwechsel")||this._normalise(subject)!==this._normalise(originalSubject)))label="Fachwechsel";
+    return{cancelled,subject:cancelled?(lesson.fach||lesson.subject):subject,originalSubject:!cancelled&&this._normalise(subject)!==this._normalise(originalSubject)?originalSubject:"",teacher:teacher||lesson.teacher||"",room:item.raum||item.room||lesson.room||"",label};
   }
 
-  _matchesClass(item, childClass) {
-    if (!childClass || !item.klasse) return true;
-    return String(item.klasse).split(/[,;/| ]+/).map(x => this._normalise(x)).includes(this._normalise(childClass));
-  }
-
-  _matchesWeekday(item, weekdayIndex) {
-    if (!item.datum) return true;
-    const text = String(item.datum).toLowerCase();
-    const names = ["montag","dienstag","mittwoch","donnerstag","freitag"];
-    if (text.includes(names[weekdayIndex])) return true;
-    const match = text.match(/(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?/);
-    if (!match) return true;
-    const date = new Date();
-    date.setDate(date.getDate() + ((weekdayIndex + 7 - (date.getDay() || 7) + 1) % 7));
-    return Number(match[1]) === date.getDate() && Number(match[2]) === date.getMonth() + 1;
-  }
-
-  _matchesPeriodText(value, start, end) {
-    const text = String(value);
-    return text.includes(start) || (end && text.includes(end));
-  }
-
-  _teacherName(value, map) {
-    if (!value) return "";
-    const raw = String(value).trim();
-    return map[raw] || map[raw.toUpperCase()] || raw;
-  }
-
-  _normalise(value) { return String(value ?? "").trim().toLowerCase().replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,""); }
-  _normaliseTime(value) { const m=String(value||"").match(/\d{1,2}:\d{2}/); return m ? m[0] : ""; }
-
-  _renderBadges(value, substitution) {
-    const values = value === null || value === undefined || value === "" ? [] : (Array.isArray(value) ? value : String(value).split(/[,;/|]+/).map(x => x.trim()).filter(Boolean));
-    if (substitution?.label) values.push(substitution.label);
-    return values.length ? `<span class="badges">${values.map(x => `<span class="badge ${substitution?.label === x ? "sub-badge" : ""}">${this._escape(x === substitution?.label ? x : `(${x})`)}</span>`).join("")}</span>` : "";
-  }
-
-  _findEntity(hass) {
-    const configured = this.config.sensor || this.config.entity;
-    if (configured && hass.states[configured]) return hass.states[configured];
-    if (!this.config.child) return hass.states["sensor.stundenplan"];
-    const wanted = String(this.config.child).toLowerCase();
-    return Object.values(hass.states).find(s => s.entity_id.startsWith("sensor.") && s.attributes?.kind_kürzel?.toString().toLowerCase() === wanted);
-  }
-
-  _escape(value) { const d=document.createElement("div"); d.textContent=String(value??""); return d.innerHTML; }
+  _matchesTimeInPeriod(value,lesson){const text=String(value);if(!/\d{1,2}:\d{2}/.test(text))return true;const times=[lesson.start,lesson.end].filter(Boolean).map(this._normaliseTime);return times.some(t=>t&&text.includes(t));}
+  _matchesClass(item,childClass){if(!childClass||!item.klasse)return true;return String(item.klasse).split(/[,;/| ]+/).map(x=>this._normalise(x)).includes(this._normalise(childClass));}
+  _matchesWeekday(item,weekdayIndex){if(!item.datum)return true;const text=String(item.datum).toLowerCase(),names=["montag","dienstag","mittwoch","donnerstag","freitag"];if(text.includes(names[weekdayIndex]))return true;const match=text.match(/(\d{1,2})[.\-/](\d{1,2})(?:[.\-/](\d{2,4}))?/);if(!match)return true;const date=new Date(),current=date.getDay()===0?7:date.getDay(),target=weekdayIndex+1;date.setDate(date.getDate()+((target-current+7)%7));return Number(match[1])===date.getDate()&&Number(match[2])===date.getMonth()+1;}
+  _teacherName(value,map){if(!value)return"";const raw=String(value).trim();return map[raw]||map[raw.toUpperCase()]||raw;}
+  _normalise(value){return String(value??"").trim().toLowerCase().replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,"");}
+  _normaliseTime(value){const m=String(value||"").match(/\d{1,2}:\d{2}/);return m?m[0]:"";}
+  _renderBadges(value,substitution){const values=value===null||value===undefined||value===""?[]:(Array.isArray(value)?value:String(value).split(/[,;/|]+/).map(x=>x.trim()).filter(Boolean));if(substitution?.label)values.push(substitution.label);return values.length?`<span class="badges">${values.map(x=>`<span class="badge ${substitution?.label===x?"sub-badge":""}">${this._escape(x===substitution?.label?x:`(${x})`)}</span>`).join("")}</span>`:"";}
+  _findEntity(hass){const configured=this.config.sensor||this.config.entity;if(configured&&hass.states[configured])return hass.states[configured];if(!this.config.child)return hass.states["sensor.stundenplan"];const wanted=String(this.config.child).toLowerCase();return Object.values(hass.states).find(s=>s.entity_id.startsWith("sensor.")&&s.attributes?.kind_kürzel?.toString().toLowerCase()===wanted);}
+  _escape(value){const d=document.createElement("div");d.textContent=String(value??"");return d.innerHTML;}
   getCardSize(){return 6;}
 }
 customElements.define("kfg-stundenplan-card",KfgStundenplanCard);window.customCards=window.customCards||[];window.customCards.push({type:"kfg-stundenplan-card",name:"KFG Stundenplan (KFG Anpassung)",description:"Persönlicher Stundenplan mit optionalem KFG-Vertretungsplan"});
