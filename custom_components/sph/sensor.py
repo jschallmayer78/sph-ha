@@ -106,11 +106,14 @@ class SphCalendarSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         events = self.coordinator.data or []
+        timetable = self.hass.data.get(DOMAIN, {}).get(self.entry.entry_id, {}).get("timetable")
+        timetable_data = timetable.data if timetable and timetable.data else {}
         art_counts = Counter(str(event.get("art", "")).strip() for event in events if str(event.get("art", "")).strip())
         responsible_counts = Counter(str(event.get("verantwortlich", "")).strip() for event in events if str(event.get("verantwortlich", "")).strip())
         return {
             "kind": self.entry.data.get(CONF_CHILD_NAME, ""),
             "kind_kürzel": self.entry.data.get(CONF_CHILD_SHORTCUT, ""),
+            "klasse": timetable_data.get("klasse", ""),
             "termine": _calendar_preview(events),
             "termine_gesamt": len(events),
             "termine_weitere": max(0, len(events) - CALENDAR_ATTRIBUTE_LIMIT),
