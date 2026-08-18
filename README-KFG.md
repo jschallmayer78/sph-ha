@@ -22,9 +22,11 @@ Die Klasse des Kindes wird von der Schulportal-Hessen-Integration aus dem Stunde
 
 ### 2. KFG-Vertretungsplan – optional
 
-Die KFG-Funktionen können auch ohne die Erweiterung **KFG Vertretungsplan** verwendet werden.
+Für die erweiterten KFG-Funktionen kann zusätzlich die Erweiterung **KFG Vertretungsplan** installiert werden.
 
-Ist `kfg-vertretungsplan` installiert und stellt die folgenden Sensoren bereit, können die KFG-Karten zusätzliche Informationen einblenden:
+urlKFG Vertretungsplan – GitHub Repositoryhttps://github.com/leonsio/kfg-vertretungsplan
+
+Wenn die Erweiterung installiert ist und die folgenden Sensoren bereitstellt, können die KFG-Karten zusätzliche Informationen einblenden:
 
 ```text
 sensor.kfg_kollegium
@@ -122,6 +124,27 @@ Beispiel:
 Dienstag 18.08.2026 · Woche B
 ```
 
+### Nachricht des Tages
+
+Die KFG-Karten können zusätzlich die **Nachricht des Tages** aus `sensor.vertretungsplan` oberhalb des Stundenplans anzeigen.
+
+Die Nachricht wird nicht einfach anhand des Wochentags übernommen. Da der Vertretungsplan mehrere Wochen enthalten kann, werden **Wochentag und Datum gemeinsam** ausgewertet.
+
+Beispiel eines Eintrags im Vertretungsplan:
+
+```yaml
+weekday: Dienstag
+date: 18.8.
+news:
+  - JS E: 7.55 Uhr - Vorstellung der Jura-AG und Wirtschafts-AG
+```
+
+Die Nachricht erscheint damit nur am passenden Datum, beispielsweise am **Dienstag, 18.08.2026**. Nachrichten eines anderen Dienstags aus einer anderen Woche werden nicht übernommen.
+
+Dies gilt auch für die Tageskarte: Wenn diese nach Unterrichtsende, am Wochenende oder bei einem unterrichtsfreien Tag auf den nächsten Unterrichtstag wechselt, wird die Nachricht für **das tatsächlich ausgewählte Datum** gesucht.
+
+In der Wochenkarte wird für jeden dargestellten Wochentag separat das zugehörige Datum ermittelt und die dazu passende Nachricht angezeigt.
+
 ### Tageskarte
 
 Die `kfg-stundenplan-tag-card` zeigt den für die aktuelle Anzeige relevanten Unterrichtstag.
@@ -133,6 +156,7 @@ Dabei gilt:
 - Am Samstag und Sonntag wird der nächste Unterrichtstag verwendet.
 - Tage ohne Unterricht werden übersprungen.
 - Die Entscheidung basiert auf den im persönlichen Stundenplan tatsächlich vorhandenen und für die aktuelle A/B-Woche gültigen Stunden.
+- Die Nachricht des Tages wird immer passend zum tatsächlich ausgewählten Datum gesucht.
 
 Die Karte aktualisiert ihre zeitabhängige Darstellung selbstständig.
 
@@ -216,6 +240,7 @@ verwenden die zusätzlichen KFG-Funktionen wie:
 - KFG-Kennzeichnung
 - Auflösung von Lehrerkürzeln über `sensor.kfg_kollegium`
 - optionale Verarbeitung von `sensor.vertretungsplan`
+- Anzeige der zum Datum passenden Nachricht des Tages
 - Berücksichtigung der persönlichen Unterrichtsgruppe
 - Kennzeichnung von Entfall, Vertretung und Fachwechsel
 - automatische Auswahl des relevanten Tages in der Tageskarte
