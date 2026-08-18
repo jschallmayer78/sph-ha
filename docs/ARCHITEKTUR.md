@@ -1,60 +1,128 @@
-# Schulportal Hessen – Quelltextstruktur
+# Schulportal Hessen – Architektur
 
-Die Integration ist modular aufgebaut. Gemeinsame Funktionen liegen unter `api/`; fachliche Funktionen werden in den jeweiligen Modulen gekapselt.
+Die Home-Assistant-Integration ist modular aufgebaut. Gemeinsame technische Funktionen liegen unter `api/`. Fachliche Funktionen werden in den jeweiligen Modulen unter `module/` gekapselt.
+
+## Quelltextstruktur
 
 ```text
 custom_components/sph/
 ├── __init__.py
+├── config_flow.py
+├── const.py
+├── coordinator.py
 ├── sensor.py
 ├── api/
 │   ├── __init__.py
-│   ├── client.py
-│   └── auth_client.py
-├── stundenplan/
+│   ├── auth_client.py
+│   └── client.py
+├── module/
 │   ├── __init__.py
-│   ├── client.py
-│   ├── coordinator.py
-│   └── sensor.py
-└── kalender/
-    ├── __init__.py
-    ├── client.py
-    ├── coordinator.py
-    └── sensor.py
+│   ├── stundenplan/
+│   │   ├── __init__.py
+│   │   ├── client.py
+│   │   ├── coordinator.py
+│   │   └── sensor.py
+│   └── kalender/
+│       ├── __init__.py
+│       ├── client.py
+│       ├── coordinator.py
+│       └── sensor.py
+├── static/
+│   └── Lovelace-Karten und weitere Frontend-Dateien
+└── translations/
 ```
 
-## `api/`
+## Integrationsebene
 
-Enthält Funktionen, die von mehreren Modulen benötigt werden, insbesondere:
+Die Dateien direkt unter `custom_components/sph/` bilden die Integrations- und Home-Assistant-Ebene:
 
-- Authentifizierung und gemeinsame HTTP-Session
-- Login-/Session-Verwaltung
-- gemeinsame technische Kommunikation mit dem Schulportal
-- gemeinsame Hilfsfunktionen für die Verarbeitung der SPH-Daten
+- `__init__.py` – Initialisierung der Integration und Aufbau der gemeinsamen Laufzeitdaten.
+- `config_flow.py` – Einrichtung und Konfiguration der Integration.
+- `const.py` – integrationsweite Konstanten.
+- `sensor.py` – Sensor-Dispatcher. Erzeugt die Sensoren aus den fachlichen Modulen und enthält selbst möglichst keine fachliche Datenverarbeitung.
+- `coordinator.py` – Kompatibilitätsschicht für den Stundenplan-Coordinator; die eigentliche Implementierung befindet sich im Stundenplan-Modul.
 
-## `stundenplan/`
+## `api/` – gemeinsame technische Funktionen
 
-Enthält die komplette fachliche Verarbeitung des Stundenplans:
+`api/` enthält Funktionen, die von mehreren fachlichen Modulen benötigt werden und nicht speziell zu Kalender oder Stundenplan gehören.
 
-- Abruf von `stundenplan.php`
-- Parsing und Normalisierung der Stundenplandaten
-- Erkennung der Schülerklasse
-- Verarbeitung von Fach, Lehrkraft, Raum und Badge
-- `SphTimetableCoordinator`
-- `SphTimetableSensor`
+Dazu zählen insbesondere:
 
-## `kalender/`
+- Authentifizierung beim Schulportal Hessen.
+- Verwaltung der gemeinsamen HTTP-Kommunikation und Session.
+- Login-/Session-Verarbeitung.
+- Gemeinsame technische Hilfsfunktionen für die Kommunikation mit SPH.
 
-Enthält die komplette fachliche Verarbeitung des Schulkalenders:
+Fachliche Verarbeitung von Kalender- oder Stundenplandaten soll nicht in `api/` abgelegt werden, wenn sie ausschließlich für eines der beiden Module benötigt wird.
 
-- Ermittlung des aktuellen hessischen Schuljahres
-- CSV-Kalenderabruf und iCal-Fallback
-- Parsing und Normalisierung der Termine
-- Verarbeitung von `art` und `verantwortlich`
-- `SphCalendarCoordinator`
-- `SphCalendarSensor`
+## `module/stundenplan/`
 
-## Grundprinzip
+Das Modul kapselt die komplette fachliche Verarbeitung des Stundenplans.
 
-Neue Funktionen sollen möglichst im fachlich passenden Modul implementiert werden. Nur Funktionen, die tatsächlich von mehreren Modulen benötigt werden, gehören in `api/`.
+- `client.py` – Abruf und fachliche Verarbeitung der Stundenplandaten von `stundenplan.php`.
+- `coordinator.py` – Home-Assistant DataUpdateCoordinator für den Stundenplan.
+- `sensor.py` – Sensorimplementierung für die Stundenplandaten.
+- `__init__.py` – Moduldefinition und öffentliche Modul-Schnittstellen.
 
-`sensor.py` auf Integrationsebene dient lediglich als Einstiegspunkt bzw. Dispatcher für die einzelnen Sensorplattformen.
+Zum fachlichen Datenmodell gehören unter anderem:
+
+- Unterrichtsstunden und Tageszuordnung.
+- Fach, Lehrkraft und Raum.
+- `badge` bzw. Wochenkennungen für A/B-Stunden.
+- Erkennung bzw. Bereitstellung der Schülerklasse.
+- Aufbereitung der Daten für den Stundenplan-Sensor.
+
+## `module/kalender/`
+
+Das Modul kapselt die komplette fachliche Verarbeitung des Schulkalenders.
+
+- `client.py` – Abruf und Parsing der Kalenderdaten.
+- `coordinator.py` – Home-Assistant DataUpdateCoordinator für den Kalender.
+- `sensor.py` – Sensorimplementierung für die Kalenderdaten.
+- `__init__.py` – Moduldefinition und öffentliche Modul-Schnittstellen.
+
+Zum fachlichen Datenmodell gehören unter anderem:
+
+- Ermittlung des aktuell gültigen hessischen Schuljahres.
+- Abruf des SPH-Kalenderexports.
+- CSV-Verarbeitung und iCal-Fallback.
+- Normalisierung der Termine.
+- Kalenderfelder wie `summary`, `description`, `location`, `art` und `verantwortlich`.
+
+## Datenfluss
+
+Die fachliche Trennung folgt grundsätzlich diesem Ablauf:
+
+```text
+Home Assistant
+      │
+      ▼
+custom_components/sph/__init__.py
+      │
+      ├──────────────► api/              Gemeinsame Anmeldung/HTTP-Kommunikation
+      │
+      ├──────────────► module/stundenplan/
+      │                    ├── client.py
+      │                    ├── coordinator.py
+      │                    └── sensor.py
+      │
+      └──────────────► module/kalender/
+                           ├── client.py
+                           ├── coordinator.py
+                           └── sensor.py
+```
+
+Der `sensor.py`-Dispatcher auf Integrationsebene verbindet die beiden fachlichen Sensorimplementierungen mit Home Assistant. Die fachliche Logik bleibt in den jeweiligen Modulen.
+
+## Grundprinzip für weitere Entwicklung
+
+Neue Funktionen sollen möglichst dort implementiert werden, wo sie fachlich hingehören:
+
+1. **Nur Stundenplan:** `module/stundenplan/`
+2. **Nur Kalender:** `module/kalender/`
+3. **Von mehreren Modulen benötigt:** `api/`
+4. **Nur Home-Assistant-Integration bzw. Konfiguration:** Ebene `custom_components/sph/`
+
+Dadurch bleiben die fachlichen Module unabhängig voneinander und die gemeinsame API wird auf tatsächlich übergreifende Funktionen beschränkt.
+
+Bei einer Erweiterung eines bestehenden Moduls sollen zunächst dessen `client.py`, `coordinator.py` und `sensor.py` geprüft werden, bevor neue Logik auf Integrationsebene ergänzt wird.
