@@ -94,7 +94,10 @@ class KfgStundenplanGridCard extends HTMLElement {
         .changed.change-pausenaufsicht { border-left-color: #009688; }
         .changed.change-sonderunterricht { border-left-color: #00acc1; }
         .changed.change-vertretung-ohne-lehrer { border-left-color: #607d8b; }
-        .calendar-event { display: inline-block; margin-top: 5px; padding: 3px 7px; border-radius: 6px; color: #fff; font-size: .74rem; font-weight: 700; line-height: 1.2; max-width: 100%; box-sizing: border-box; }
+        .calendar-highlight { width: calc(100% - 2px); box-sizing: border-box; padding: 8px 10px 8px 12px; border-radius: 8px; border-left: 5px solid var(--warning-color, #ff9800); background: rgba(255, 152, 0, .12); }
+        .calendar-highlight.calendar-arbeiten { border-left-color: var(--warning-color, #ff9800); background: rgba(255, 152, 0, .14); }
+        .calendar-highlight.calendar-klausuren { border-left-color: var(--error-color, #e53935); background: rgba(229, 57, 53, .14); }
+        .calendar-event { display: inline-block; align-self: center; margin-top: 6px; padding: 4px 10px; border-radius: 999px; color: #fff; font-size: .76rem; font-weight: 800; line-height: 1.2; max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; box-shadow: 0 1px 2px rgba(0, 0, 0, .18); }
         .calendar-arbeiten { background: var(--warning-color, #ff9800); }
         .calendar-klausuren { background: var(--error-color, #e53935); }
         .cancelled { text-decoration: line-through; opacity: .62; }
@@ -140,8 +143,9 @@ class KfgStundenplanGridCard extends HTMLElement {
   _renderLessons(lessons, date, calendarEvents) {
     return `<div class="lessons">${lessons.map(lesson => {
       const changeClass = lesson.changeClass || "";
-      const classes = [changeClass ? `changed ${changeClass}` : "", lesson.cancelled ? "cancelled" : ""].filter(Boolean).join(" ");
       const events = this._calendarEventsForLesson(calendarEvents, date, lesson);
+      const calendarClasses = events.length ? ` calendar-highlight ${events.map(event => event.cssClass).join(" ")}` : "";
+      const classes = [changeClass ? `changed ${changeClass}` : "", lesson.cancelled ? "cancelled" : "", calendarClasses].filter(Boolean).join(" ");
       return `<div class="lesson ${classes}"><div class="subject">${this._esc(lesson.displaySubject || lesson.fach || lesson.subject || "Unterricht")}</div>${lesson.changeLabel ? `<span class="badge ${changeClass}">${this._esc(lesson.changeLabel)}</span>` : ""}${events.map(event => `<span class="calendar-event ${event.cssClass}">${this._esc(event.summary)}</span>`).join("")}<div class="teacher">${this._esc(lesson.displayTeacher || lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`;
     }).join("")}</div>`;
   }
