@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from ..api import current_school_year_start
 from ..api.client import SphAuthClient
 from ..const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
 from .client import SphCalendarClient
@@ -12,7 +13,8 @@ from .client import SphCalendarClient
 _LOGGER = logging.getLogger(__name__)
 
 
-# Official Hessian summer holidays used to identify the current school year.
+# Official Hessian summer holidays. Calendar-specific bounds remain in the
+# calendar module; the school-year selection itself is shared via api/.
 HESSEN_SOMMERFERIEN = {
     2025: (date(2025, 7, 7), date(2025, 8, 15)),
     2026: (date(2026, 6, 29), date(2026, 8, 7)),
@@ -21,16 +23,6 @@ HESSEN_SOMMERFERIEN = {
     2029: (date(2029, 7, 16), date(2029, 8, 24)),
     2030: (date(2030, 7, 22), date(2030, 8, 30)),
 }
-
-
-def current_school_year(today: date) -> int:
-    """Return the first calendar year of the current Hessian school year."""
-    for year, (_, summer_end) in HESSEN_SOMMERFERIEN.items():
-        if summer_end < today <= date(year, 8, 31):
-            return year
-        if date(year, 6, 1) <= today <= summer_end:
-            return year - 1
-    return today.year if today.month >= 8 else today.year - 1
 
 
 def school_year_bounds(school_year_start: int) -> tuple[datetime, datetime]:
@@ -71,7 +63,7 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         try:
             today = datetime.now().date()
-            school_year_start = current_school_year(today)
+            school_year_start = current_school_year_start(today)
             start, end = school_year_bounds(school_year_start)
             _LOGGER.debug(
                 "SPH: Kalender aktuelles Schuljahr %s/%s: %s bis %s",
@@ -91,5 +83,4 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
             )
             return events or []
         except Exception as err:
-            # Keep the last successful coordinator data during short outages.
             raise UpdateFailed(str(err)) from err
