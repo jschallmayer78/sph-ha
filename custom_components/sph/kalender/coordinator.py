@@ -5,14 +5,14 @@ import logging
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from ..api.client import SphClient
+from ..api.client import SphAuthClient
 from ..const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .client import SphCalendarClient
 
 _LOGGER = logging.getLogger(__name__)
 
 
-# Official Hessian summer holidays. The calendar export can contain events
-# from the preceding school year, most notably the summer holidays.
+# Official Hessian summer holidays used to identify the current school year.
 HESSEN_SOMMERFERIEN = {
     2025: (date(2025, 7, 7), date(2025, 8, 15)),
     2026: (date(2026, 6, 29), date(2026, 8, 7)),
@@ -23,32 +23,42 @@ HESSEN_SOMMERFERIEN = {
 }
 
 
-def _current_school_year(today: date) -> int:
+def current_school_year(today: date) -> int:
     """Return the first calendar year of the current Hessian school year."""
     for year, (_, summer_end) in HESSEN_SOMMERFERIEN.items():
         if summer_end < today <= date(year, 8, 31):
             return year
         if date(year, 6, 1) <= today <= summer_end:
             return year - 1
-
     return today.year if today.month >= 8 else today.year - 1
 
 
-def _school_year_bounds(school_year_start: int) -> tuple[datetime, datetime]:
+def school_year_bounds(school_year_start: int) -> tuple[datetime, datetime]:
     """Return the effective beginning and end of a Hessian school year."""
     previous_summer = HESSEN_SOMMERFERIEN.get(school_year_start)
     next_summer = HESSEN_SOMMERFERIEN.get(school_year_start + 1)
-
-    start_date = previous_summer[1] + timedelta(days=1) if previous_summer else date(school_year_start, 8, 1)
-    end_date = next_summer[0] - timedelta(days=1) if next_summer else date(school_year_start + 1, 7, 31)
-
-    return datetime.combine(start_date, datetime.min.time()), datetime.combine(end_date, datetime.max.time())
+    start_date = (
+        previous_summer[1] + timedelta(days=1)
+        if previous_summer
+        else date(school_year_start, 8, 1)
+    )
+    end_date = (
+        next_summer[0] - timedelta(days=1)
+        if next_summer
+        else date(school_year_start + 1, 7, 31)
+    )
+    return (
+        datetime.combine(start_date, datetime.min.time()),
+        datetime.combine(end_date, datetime.max.time()),
+    )
 
 
 class SphCalendarCoordinator(DataUpdateCoordinator):
-    def __init__(self, hass, entry, client: SphClient):
+    """Coordinator for the SPH calendar module."""
+
+    def __init__(self, hass, entry, auth: SphAuthClient):
         self.entry = entry
-        self.client = client
+        self.client = SphCalendarClient(auth)
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -61,9 +71,8 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self):
         try:
             today = datetime.now().date()
-            school_year_start = _current_school_year(today)
-            start, end = _school_year_bounds(school_year_start)
-
+            school_year_start = current_school_year(today)
+            start, end = school_year_bounds(school_year_start)
             _LOGGER.debug(
                 "SPH: Kalender aktuelles Schuljahr %s/%s: %s bis %s",
                 school_year_start,
@@ -71,28 +80,16 @@ class SphCalendarCoordinator(DataUpdateCoordinator):
                 start.date(),
                 end.date(),
             )
-
             events = await self.hass.async_add_executor_job(
                 self.client.get_calendar, start, end, school_year_start
             )
-
-            start_iso = start.isoformat()
-            end_iso = end.isoformat()
-            events = [
-                event
-                for event in (events or [])
-                if start_iso <= str(event.get("start", "")) <= end_iso
-            ]
-
             _LOGGER.debug(
                 "SPH: Kalender liefert für Schuljahr %s/%s insgesamt %d Termine",
                 school_year_start,
                 school_year_start + 1,
-                len(events),
+                len(events or []),
             )
-            return events
+            return events or []
         except Exception as err:
-            # Raising UpdateFailed makes DataUpdateCoordinator retain its last
-            # successful result. A temporary outage therefore does not erase
-            # already available calendar data.
+            # Keep the last successful coordinator data during short outages.
             raise UpdateFailed(str(err)) from err
