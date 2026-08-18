@@ -22,7 +22,12 @@ custom_components/sph/
 │   │   ├── client.py
 │   │   ├── coordinator.py
 │   │   └── sensor.py
-│   └── kalender/
+│   ├── kalender/
+│   │   ├── __init__.py
+│   │   ├── client.py
+│   │   ├── coordinator.py
+│   │   └── sensor.py
+│   └── meinunterricht/
 │       ├── __init__.py
 │       ├── client.py
 │       ├── coordinator.py
@@ -44,7 +49,7 @@ Die Dateien direkt unter `custom_components/sph/` bilden die Integrations- und H
 
 ## `api/` – gemeinsame technische Funktionen
 
-`api/` enthält Funktionen, die von mehreren fachlichen Modulen benötigt werden und nicht speziell zu Kalender oder Stundenplan gehören.
+`api/` enthält Funktionen, die von mehreren fachlichen Modulen benötigt werden und nicht speziell zu Kalender, Stundenplan oder Mein Unterricht gehören.
 
 Dazu zählen insbesondere:
 
@@ -53,7 +58,7 @@ Dazu zählen insbesondere:
 - Login-/Session-Verarbeitung.
 - Gemeinsame technische Hilfsfunktionen für die Kommunikation mit SPH.
 
-Fachliche Verarbeitung von Kalender- oder Stundenplandaten soll nicht in `api/` abgelegt werden, wenn sie ausschließlich für eines der beiden Module benötigt wird.
+Fachliche Verarbeitung soll nicht in `api/` abgelegt werden, wenn sie ausschließlich für ein einzelnes Modul benötigt wird.
 
 ## `module/stundenplan/`
 
@@ -89,6 +94,26 @@ Zum fachlichen Datenmodell gehören unter anderem:
 - Normalisierung der Termine.
 - Kalenderfelder wie `summary`, `description`, `location`, `art` und `verantwortlich`.
 
+## `module/meinunterricht/`
+
+Das Modul kapselt die fachliche Verarbeitung der Aufgaben aus „Mein Unterricht“.
+
+- `client.py` – Abruf von `meinunterricht.php` und Parsing der aktuellen Kurs-/Hausaufgabeneinträge.
+- `coordinator.py` – Home-Assistant DataUpdateCoordinator für die Aufgaben.
+- `sensor.py` – Sensorimplementierung mit Aufgabenliste und Erledigungsstatistik.
+- `__init__.py` – Moduldefinition und öffentliche Modul-Schnittstellen.
+
+Das Datenmodell enthält insbesondere:
+
+- Datum und daraus abgeleiteten Wochentag.
+- Fach und Kurs.
+- Thema und Hausaufgabe.
+- Lehrer-Kürzel.
+- Erledigt-/Nicht-erledigt-Status.
+- SPH-interne Kurs-/Eintragskennungen zur eindeutigen Zuordnung.
+
+Das Modul verwendet dieselbe authentifizierte SPH-Session wie Stundenplan und Kalender. Dadurch wird bei einer Aktualisierung nicht für jedes Modul ein eigener Login-Handshake benötigt.
+
 ## Datenfluss
 
 Die fachliche Trennung folgt grundsätzlich diesem Ablauf:
@@ -99,20 +124,25 @@ Home Assistant
       ▼
 custom_components/sph/__init__.py
       │
-      ├──────────────► api/              Gemeinsame Anmeldung/HTTP-Kommunikation
+      ├──────────────► api/                    Gemeinsame Anmeldung/HTTP-Kommunikation
       │
       ├──────────────► module/stundenplan/
       │                    ├── client.py
       │                    ├── coordinator.py
       │                    └── sensor.py
       │
-      └──────────────► module/kalender/
+      ├──────────────► module/kalender/
+      │                    ├── client.py
+      │                    ├── coordinator.py
+      │                    └── sensor.py
+      │
+      └──────────────► module/meinunterricht/
                            ├── client.py
                            ├── coordinator.py
                            └── sensor.py
 ```
 
-Der `sensor.py`-Dispatcher auf Integrationsebene verbindet die beiden fachlichen Sensorimplementierungen mit Home Assistant. Die fachliche Logik bleibt in den jeweiligen Modulen.
+Der `sensor.py`-Dispatcher auf Integrationsebene verbindet die fachlichen Sensorimplementierungen mit Home Assistant. Die fachliche Logik bleibt in den jeweiligen Modulen.
 
 ## Grundprinzip für weitere Entwicklung
 
@@ -120,8 +150,9 @@ Neue Funktionen sollen möglichst dort implementiert werden, wo sie fachlich hin
 
 1. **Nur Stundenplan:** `module/stundenplan/`
 2. **Nur Kalender:** `module/kalender/`
-3. **Von mehreren Modulen benötigt:** `api/`
-4. **Nur Home-Assistant-Integration bzw. Konfiguration:** Ebene `custom_components/sph/`
+3. **Nur Mein Unterricht:** `module/meinunterricht/`
+4. **Von mehreren Modulen benötigt:** `api/`
+5. **Nur Home-Assistant-Integration bzw. Konfiguration:** Ebene `custom_components/sph/`
 
 Dadurch bleiben die fachlichen Module unabhängig voneinander und die gemeinsame API wird auf tatsächlich übergreifende Funktionen beschränkt.
 
