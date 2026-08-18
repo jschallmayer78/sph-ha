@@ -1,40 +1,277 @@
-const KFG_GRID_CHANGE_LABELS={Betr:"Betreuung",Vertr:"Vertretung",Entf:"Entfall",Taus:"Tausch",Freis:"Freistunde",Raum:"Raumänderung","Statt-Vertretung":"Statt-Vertretung",Paus:"Pausenaufsicht",SES:"Sonderunterricht","Vtr. ohne Lehrer":"Vertretung ohne Lehrer"};
-class KfgStundenplanGridCard extends HTMLElement{
- setConfig(c){this.config=c||{};if(!this.shadowRoot)this.attachShadow({mode:"open"});}
- set hass(h){this._hass=h;this._render();}
- _render(){const h=this._hass;if(!h||!this.config||!this.shadowRoot)return;const e=this._findEntity(h),a=e?.attributes||{},source=Array.isArray(a.eigener_plan)?a.eigener_plan.slice(0,5):[],w=String(a.wochenkennung||"").trim().toUpperCase(),ctx=this._context(h,a),aliases=this._subjectAliases(source),m=this._monday(new Date()),names=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],title=this.config.title||"",header=title?` header="${this._esc(title)}"`:"";if(!e){this.shadowRoot.innerHTML=`<ha-card${header}><div class="error">Kein passender Stundenplan gefunden.</div></ha-card>`;return;}const days=source.map((d,di)=>(Array.isArray(d)?d:[]).filter(l=>this._active(l,w)).map(l=>this._applySubstitution(l,di,m,ctx,aliases))),max=Math.max(8,...days.flatMap(d=>d.map(l=>this._periodEnd(l)))),slots=this._buildSlots(days,max),table=this._table(days,names,slots,m,w);this.shadowRoot.innerHTML=`<style>
-:host{display:block;width:100%;box-sizing:border-box}ha-card{width:100%;overflow:hidden}.wrap{width:100%;overflow-x:auto}table{width:100%;min-width:1050px;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid var(--divider-color);text-align:center;vertical-align:middle;box-sizing:border-box}thead th{background:var(--secondary-background-color);padding:8px 6px;font-weight:700}thead th:first-child,tbody th{width:15%}.day-name{display:block;font-size:1.05rem}.day-date{display:block;margin-top:2px;font-size:.8rem;color:var(--secondary-text-color);font-weight:500}.week{color:var(--primary-color);font-weight:800}.news{margin-top:7px;padding:5px 7px;border-left:3px solid var(--primary-color);border-radius:3px;background:var(--primary-background-color,var(--card-background-color));text-align:left;font-size:.76rem;font-weight:500}.news-title{font-weight:700;margin-bottom:2px}tbody th{padding:7px 4px;background:var(--secondary-background-color);font-weight:700}.period{display:block;font-size:1rem}.slot-time{display:block;margin-top:4px;font-size:.82rem;font-weight:400;white-space:nowrap}td{padding:8px 6px}.lessons{display:flex;flex-direction:column;gap:7px;width:100%}.lesson{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:52px;line-height:1.25}.subject{font-size:1.05rem;font-weight:700}.teacher{margin-top:3px;font-size:.9rem;color:var(--secondary-text-color)}.badge{display:inline-block;margin-top:4px;padding:2px 7px;border-radius:999px;color:#fff;font-size:.72rem;font-weight:700;white-space:nowrap}.change-vertretung{background:var(--info-color,#2196f3)}.change-entfall{background:var(--error-color,#f44336)}.change-fachwechsel,.change-tausch{background:var(--warning-color,#ff9800)}.change-betreuung{background:#4caf50}.change-freistunde{background:#757575}.change-raumanderung{background:#9c27b0}.change-statt-vertretung{background:#03a9f4}.change-pausenaufsicht{background:#009688}.change-sonderunterricht{background:#00acc1}.change-vertretung-ohne-lehrer{background:#607d8b}.changed{border-left:4px solid var(--warning-color,#ff9800);padding-left:7px}.changed.change-vertretung{border-left-color:var(--info-color,#2196f3)}.changed.change-betreuung{border-left-color:#4caf50}.changed.change-tausch{border-left-color:#ff9800}.changed.change-raumanderung{border-left-color:#9c27b0}.changed.change-statt-vertretung{border-left-color:#03a9f4}.changed.change-pausenaufsicht{border-left-color:#009688}.changed.change-sonderunterricht{border-left-color:#00acc1}.changed.change-vertretung-ohne-lehrer{border-left-color:#607d8b}.cancelled{text-decoration:line-through;opacity:.62}.empty{color:var(--secondary-text-color)}.error{padding:16px;color:var(--error-color)}@media(max-width:700px){table{min-width:900px}.subject{font-size:.95rem}}
-</style><ha-card${header}><div class="wrap">${table}</div></ha-card>`;}
- _table(days,names,slots,m,w){const covered=Array.from({length:5},()=>new Set());let x="<table><thead><tr><th>Stunde</th>";names.forEach((name,i)=>{const d=new Date(m);d.setDate(d.getDate()+i);const news=this._news(this._hass,d);x+=`<th><span class="day-name">${this._esc(name)}</span><span class="day-date">${this._esc(this._date(d))}${w?` · Woche <span class="week">${this._esc(w)}</span>`:""}</span>${news.length?`<div class="news"><div class="news-title">Nachricht des Tages</div>${news.map(n=>`<div>${this._esc(n)}</div>`).join("")}</div>`:""}</th>`});x+="</tr></thead><tbody>";for(const slot of slots){x+="<tr>";x+=`<th><span class="period">${slot.index}.</span><span class="slot-time">${this._esc(slot.start||"")}${slot.end?` – ${this._esc(slot.end)}`:""}</span></th>`;for(let di=0;di<5;di++){if(covered[di].has(slot.index))continue;const lessons=this._at(days[di],slot.index),span=this._span(lessons,slot.index);for(let p=slot.index+1;p<slot.index+span;p++)covered[di].add(p);x+=`<td${span>1?` rowspan="${span}"`:""}>${lessons.length?this._lessons(lessons):'<span class="empty">–</span>'}</td>`;}x+="</tr>";}return x+"</tbody></table>";}
- _lessons(ls){return`<div class="lessons">${ls.map(l=>{const cc=l.changeClass||"",cl=[cc?`changed ${cc}`:"",l.cancelled?"cancelled":""].filter(Boolean).join(" ");return`<div class="lesson ${cl}"><div class="subject">${this._esc(l.displaySubject||l.fach||l.subject||"Unterricht")}</div>${l.changeLabel?`<span class="badge ${cc}">${this._esc(l.changeLabel)}</span>`:""}<div class="teacher">${this._esc(l.displayTeacher||l.teacher||"")}${l.room?` · Raum: ${this._esc(l.room)}`:""}</div></div>`}).join("")}</div>`;}
- _applySubstitution(l,di,m,c,aliases){const base={...l,displaySubject:l.fach||l.subject||"Unterricht",displayTeacher:this._teacher(l.teacher,c.teachers),room:l.room||""};if(!c.available||!c.entries.length||!l?.subject)return base;const d=new Date(m);d.setDate(d.getDate()+di);const matches=c.entries.filter(i=>this._class(i,c.childClass)&&this._dateMatch(i,d,di)&&this._period(i.stunde,l)&&this._subjectMatches(i,l,aliases));if(!matches.length)return base;const i=matches[0],art=String(i.art||"").trim(),low=art.toLowerCase(),cancelled=low.includes("entfall")||low.includes("ausfall")||low.includes("frei"),newSubject=i.fach||i.subject||l.fach||l.subject,original=i.fach_original||i.subject_original||l.subject||l.fach,fachwechsel=!cancelled&&this._norm(newSubject)!==this._norm(original),label=fachwechsel?"Fachwechsel":(KFG_GRID_CHANGE_LABELS[art]||art||"Vertretung");return{...base,displaySubject:cancelled?base.displaySubject:this._displaySubject(newSubject,aliases,l),displayTeacher:(i.vertreter||i.lehrer_nach||i.teacher)?this._teacher(i.vertreter||i.lehrer_nach||i.teacher,c.teachers):base.displayTeacher,room:i.raum||i.room||base.room,cancelled,changeLabel:label,changeClass:this._className(label)};}
- _subjectMatches(i,l,aliases){const vals=[i.fach_original,i.subject_original,i.fach,i.subject].filter(Boolean).map(v=>this._norm(v)),own=[l.subject,l.fach].filter(Boolean).flatMap(v=>{const k=this._norm(v);return[k,...(aliases[k]?.matches||[])]});return vals.some(v=>own.includes(v));}
- _displaySubject(v,aliases,l){const t=this._norm(v);if(t===this._norm(l.subject)&&l.fach)return l.fach;if(aliases[t]?.label)return aliases[t].label;return String(v||l.fach||l.subject||"");}
- _subjectAliases(days){const a={};for(const d of days||[])for(const l of Array.isArray(d)?d:[]){const s=this._norm(l.subject),f=this._norm(l.fach);if(!s||!f)continue;const label=String(l.fach||l.subject).trim();a[s]={matches:Array.from(new Set([...(a[s]?.matches||[]),s,f])),label};a[f]={matches:Array.from(new Set([...(a[f]?.matches||[]),s,f])),label};}return a;}
- _context(h,a){const p=h.states["sensor.vertretungsplan"],c=h.states["sensor.kfg_kollegium"];return{available:!!(p||c),entries:this._entries(p?.attributes||{}),teachers:c?.attributes?.lehrer&&typeof c.attributes.lehrer==="object"?c.attributes.lehrer:{},childClass:String(a.klasse||"").trim()};}
- _entries(a){const r=[],walk=v=>{if(Array.isArray(v))return v.forEach(walk);if(!v||typeof v!=="object")return;if(this._looks(v))r.push(v);Object.values(v).forEach(walk)};walk(a);return r;}
- _looks(v){return!!(v&&(v.fach||v.fach_original||v.subject)&&(v.stunde||v.datum||v.art||v.vertreter||v.lehrer_nach));}
- _active(l,w){const b=l?.badge;if(b==null||b===""||!w)return true;const vals=Array.isArray(b)?b:String(b).split(/[,;/|]+/);return vals.some(v=>String(v).trim().toUpperCase()===w);}
- _at(d,p){return(Array.isArray(d)?d:[]).filter(l=>{const i=Number(l?.index),du=Math.max(1,Number(l?.duration)||1);return Number.isFinite(i)&&i<=p&&p<i+du;});}
- _span(ls,p){const s=ls.filter(l=>Number(l?.index)===p);return s.length?Math.max(1,...s.map(l=>Number(l.duration)||1)):1;}
- _periodEnd(l){const i=Number(l?.index),d=Math.max(1,Number(l?.duration)||1);return Number.isFinite(i)?i+d-1:1;}
- _buildSlots(days,max){const by=new Map();for(const day of days)for(const l of Array.isArray(day)?day:[]){const i=Number(l?.index),du=Math.max(1,Number(l?.duration)||1);if(!Number.isFinite(i))continue;const s=this._timeToMinutes(l.start),e=this._timeToMinutes(l.end);if(s!==null&&e!==null&&e>s&&du>1){const len=(e-s)/du;for(let o=0;o<du;o++){const p=i+o;if(!by.has(p))by.set(p,{start:this._minutesToTime(s+len*o),end:this._minutesToTime(s+len*(o+1))});}}else if(!by.has(i))by.set(i,{start:l.start||"",end:l.end||""});}const slots=[];for(let i=1;i<=max;i++){const c=by.get(i)||{start:"",end:""};slots.push({index:i,start:c.start,end:c.end});}return slots;}
- _timeToMinutes(v){if(typeof v!=="string")return null;const m=v.trim().match(/^(\d{1,2}):(\d{2})/);return m?Number(m[1])*60+Number(m[2]):null;}
- _minutesToTime(v){const m=Math.round(v);return`${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;}
- _news(h,d){const a=h.states["sensor.vertretungsplan"]?.attributes;if(!a)return[];const t={day:d.getDate(),month:d.getMonth()+1,weekday:d.getDay()},r=[],walk=v=>{if(Array.isArray(v))return v.forEach(walk);if(!v||typeof v!=="object")return;if(v.weekday&&v.date&&Array.isArray(v.news)&&this._newsDate(v.weekday,v.date,t))v.news.forEach(n=>{const z=Array.isArray(n)?n.flat(Infinity).join(" "):n;if(String(z).trim())r.push(String(z).trim())});Object.values(v).forEach(walk)};walk(a);return[...new Set(r)];}
- _newsDate(w,d,t){const n=["sonntag","montag","dienstag","mittwoch","donnerstag","freitag","samstag"],wd=n.indexOf(String(w).trim().toLowerCase()),m=String(d).match(/(\d{1,2})\s*[.\/-]\s*(\d{1,2})/);return(wd<0||wd===t.weekday)&&!!m&&+m[1]===t.day&&+m[2]===t.month;}
- _dateMatch(i,d,di){if(!i?.datum)return false;const t=String(i.datum).trim().toLowerCase(),n=["montag","dienstag","mittwoch","donnerstag","freitag","samstag","sonntag"],wd=n.indexOf(t);if(wd>=0)return wd===di+1;const m=t.match(/(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?/);if(!m||+m[1]!==d.getDate()||+m[2]!==d.getMonth()+1)return false;return!m[3]||+m[3]===d.getFullYear()||+m[3]===d.getFullYear()%100;}
- _period(v,l){if(!v||!l)return true;const n=String(v).match(/\d+/g)?.map(Number).filter(x=>x>0&&x<20)||[],i=Number(l.index);if(!n.length||!Number.isFinite(i))return true;if(n.length===2&&/[-–—]/.test(String(v))){const r=[];for(let x=n[0];x<=n[1];x++)r.push(x);return r.includes(i);}return n.includes(i);}
- _class(i,c){if(!c||!i?.klasse)return false;const w=this._norm(c);return String(i.klasse).split(/[,;/|]+/).some(x=>this._norm(x)===w);}
- _teacher(v,map){if(!v)return"";const raw=String(v).trim(),q=raw.toLocaleLowerCase("de-DE"),k=Object.keys(map||{}).find(x=>String(x).trim().toLocaleLowerCase("de-DE")===q);return k?map[k]:raw;}
- _className(v){return this._norm(v).replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");}
- _norm(v){return String(v??"").trim().toLowerCase().replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,"");}
- _monday(d){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()),n=x.getDay();x.setDate(x.getDate()+(n===0?-6:1-n));return x;}
- _date(d){return new Intl.DateTimeFormat("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"}).format(d);}
- _findEntity(h){const c=this.config.sensor||this.config.entity;if(c&&h.states[c])return h.states[c];if(!this.config.child)return h.states["sensor.stundenplan"];const w=String(this.config.child).toLowerCase();return Object.values(h.states).find(s=>s.entity_id.startsWith("sensor.")&&s.attributes?.kind_kürzel?.toString().toLowerCase()===w);}
- _esc(v){const d=document.createElement("div");d.textContent=String(v??"");return d.innerHTML;}
- getCardSize(){return 10;}
- getGridOptions(){return{columns:"full",min_columns:12,rows:8,min_rows:5};}
+const KFG_CHANGE_LABELS = {
+  Betr: "Betreuung",
+  Vertr: "Vertretung",
+  Entf: "Entfall",
+  Taus: "Tausch",
+  Freis: "Freistunde",
+  Raum: "Raumänderung",
+  "Statt-Vertretung": "Statt-Vertretung",
+  Paus: "Pausenaufsicht",
+  SES: "Sonderunterricht",
+  "Vtr. ohne Lehrer": "Vertretung ohne Lehrer"
+};
+
+class KfgStundenplanGridCard extends HTMLElement {
+  setConfig(config) {
+    this.config = config || {};
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    const hass = this._hass;
+    if (!hass || !this.config || !this.shadowRoot) return;
+
+    const entity = this._findEntity(hass);
+    const attrs = entity?.attributes || {};
+    const sourceDays = Array.isArray(attrs.eigener_plan) ? attrs.eigener_plan.slice(0, 5) : [];
+    const week = String(attrs.wochenkennung || "").trim().toUpperCase();
+    const ctx = this._context(hass, attrs);
+    const aliases = this._subjectAliases(sourceDays);
+    const monday = this._monday(new Date());
+    const names = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
+    const title = this.config.title || "";
+    const header = title ? ` header="${this._esc(title)}"` : "";
+
+    if (!entity) {
+      this.shadowRoot.innerHTML = `<ha-card${header}><div class="error">Kein passender Stundenplan gefunden.</div></ha-card>`;
+      return;
+    }
+
+    const days = sourceDays.map((day, dayIndex) =>
+      (Array.isArray(day) ? day : []).filter(lesson => this._active(lesson, week))
+        .map(lesson => this._applySubstitution(lesson, dayIndex, monday, ctx, aliases))
+    );
+
+    const maxPeriod = Math.max(8, ...days.flatMap(day =>
+      day.map(lesson => this._periodEnd(lesson))
+    ));
+    const slots = this._buildSlots(days, maxPeriod);
+    const table = this._renderTable(days, names, slots, monday, week);
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        :host { display: block; width: 100%; box-sizing: border-box; }
+        ha-card { width: 100%; overflow: hidden; }
+        .table-wrap { width: 100%; overflow-x: auto; }
+        table { width: 100%; min-width: 1050px; border-collapse: collapse; table-layout: fixed; }
+        th, td { border: 1px solid var(--divider-color); text-align: center; vertical-align: middle; box-sizing: border-box; }
+        thead th { background: var(--secondary-background-color); padding: 8px 6px; font-weight: 700; }
+        thead th:first-child { width: 15%; }
+        .day-name { display: block; font-size: 1.05rem; }
+        .day-date { display: block; margin-top: 2px; font-size: .8rem; color: var(--secondary-text-color); font-weight: 500; }
+        .week { color: var(--primary-color); font-weight: 800; }
+        tbody th { padding: 7px 4px; background: var(--secondary-background-color); }
+        .period { display: block; font-size: 1rem; }
+        .slot-time { display: block; margin-top: 4px; font-size: .82rem; font-weight: 400; white-space: nowrap; }
+        td { padding: 8px 6px; }
+        .lessons { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+        .lesson { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 52px; line-height: 1.25; }
+        .subject { font-size: 1.05rem; font-weight: 700; }
+        .teacher { margin-top: 3px; font-size: .9rem; color: var(--secondary-text-color); }
+        .badge { display: inline-block; margin-left: 4px; padding: 2px 7px; border-radius: 999px; color: #fff; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+        .change-vertretung { background: var(--info-color, #2196f3); }
+        .change-entfall { background: var(--error-color, #f44336); }
+        .change-fachwechsel, .change-tausch { background: var(--warning-color, #ff9800); }
+        .change-betreuung { background: #4caf50; }
+        .change-freistunde { background: #757575; }
+        .change-raumanderung { background: #9c27b0; }
+        .change-statt-vertretung { background: #03a9f4; }
+        .change-pausenaufsicht { background: #009688; }
+        .change-sonderunterricht { background: #00acc1; }
+        .change-vertretung-ohne-lehrer { background: #607d8b; }
+        .changed { border-left: 4px solid var(--warning-color, #ff9800); padding-left: 7px; }
+        .changed.change-vertretung { border-left-color: var(--info-color, #2196f3); }
+        .changed.change-betreuung { border-left-color: #4caf50; }
+        .changed.change-tausch { border-left-color: #ff9800; }
+        .changed.change-raumanderung { border-left-color: #9c27b0; }
+        .changed.change-statt-vertretung { border-left-color: #03a9f4; }
+        .changed.change-pausenaufsicht { border-left-color: #009688; }
+        .changed.change-sonderunterricht { border-left-color: #00acc1; }
+        .changed.change-vertretung-ohne-lehrer { border-left-color: #607d8b; }
+        .cancelled { text-decoration: line-through; opacity: .62; }
+        .empty { color: var(--secondary-text-color); }
+        .error { padding: 16px; color: var(--error-color); }
+        @media (max-width: 700px) { table { min-width: 900px; } .subject { font-size: .95rem; } }
+      </style>
+      <ha-card${header}><div class="table-wrap">${table}</div></ha-card>`;
+  }
+
+  _renderTable(days, names, slots, monday, week) {
+    const covered = Array.from({ length: 5 }, () => new Set());
+    let html = "<table><thead><tr><th>Stunde</th>";
+
+    names.forEach((name, dayIndex) => {
+      const date = new Date(monday);
+      date.setDate(date.getDate() + dayIndex);
+      html += `<th><span class="day-name">${this._esc(name)}</span><span class="day-date">${this._esc(this._date(date))}${week ? ` · Woche <span class="week">${this._esc(week)}</span>` : ""}</span></th>`;
+    });
+    html += "</tr></thead><tbody>";
+
+    for (const slot of slots) {
+      html += "<tr>";
+      html += `<th><span class="period">${slot.index}.</span><span class="slot-time">${this._esc(slot.start || "")}${slot.end ? ` – ${this._esc(slot.end)}` : ""}</span></th>`;
+
+      for (let dayIndex = 0; dayIndex < 5; dayIndex++) {
+        if (covered[dayIndex].has(slot.index)) continue;
+        const lessons = this._lessonsAt(days[dayIndex], slot.index);
+        const span = this._spanFor(lessons, slot.index);
+        for (let p = slot.index + 1; p < slot.index + span; p++) covered[dayIndex].add(p);
+        html += `<td${span > 1 ? ` rowspan="${span}"` : ""}>`;
+        html += lessons.length ? this._renderLessons(lessons) : '<span class="empty">–</span>';
+        html += "</td>";
+      }
+      html += "</tr>";
+    }
+
+    return html + "</tbody></table>";
+  }
+
+  _renderLessons(lessons) {
+    return `<div class="lessons">${lessons.map(lesson => {
+      const changeClass = lesson.changeClass || "";
+      const classes = [changeClass ? `changed ${changeClass}` : "", lesson.cancelled ? "cancelled" : ""].filter(Boolean).join(" ");
+      return `<div class="lesson ${classes}"><div class="subject">${this._esc(lesson.displaySubject || lesson.fach || lesson.subject || "Unterricht")}</div>${lesson.changeLabel ? `<span class="badge ${changeClass}">${this._esc(lesson.changeLabel)}</span>` : ""}<div class="teacher">${this._esc(lesson.displayTeacher || lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`;
+    }).join("")}</div>`;
+  }
+
+  _applySubstitution(lesson, dayIndex, monday, ctx, aliases) {
+    const base = { ...lesson, displaySubject: lesson.fach || lesson.subject || "Unterricht", displayTeacher: this._teacher(lesson.teacher, ctx.teachers), room: lesson.room || "" };
+    if (!ctx.available || !ctx.entries.length || !lesson?.subject) return base;
+    const date = new Date(monday);
+    date.setDate(date.getDate() + dayIndex);
+    const candidates = ctx.entries.filter(item => this._class(item, ctx.childClass) && this._dateMatch(item, date, dayIndex) && this._period(item.stunde, lesson) && this._subjectMatches(item, lesson, aliases));
+    if (!candidates.length) return base;
+    const item = candidates[0];
+    const art = String(item.art || "").trim();
+    const low = art.toLowerCase();
+    const cancelled = low.includes("entfall") || low.includes("ausfall") || low.includes("frei");
+    const changedSubject = item.fach || item.subject || lesson.fach || lesson.subject || "";
+    const originalSubject = item.fach_original || item.subject_original || lesson.subject || lesson.fach || "";
+    const fachwechsel = !cancelled && this._norm(changedSubject) !== this._norm(originalSubject);
+    const changeLabel = fachwechsel ? "Fachwechsel" : (KFG_CHANGE_LABELS[art] || art || "Vertretung");
+    const changeClass = this._className(changeLabel);
+    return { ...base, displaySubject: cancelled ? base.displaySubject : this._displaySubject(changedSubject, aliases, lesson), displayTeacher: item.vertreter || item.lehrer_nach || item.teacher ? this._teacher(item.vertreter || item.lehrer_nach || item.teacher, ctx.teachers) : base.displayTeacher, room: item.raum || item.room || base.room, cancelled, changeLabel, changeClass };
+  }
+
+  _subjectMatches(item, lesson, aliases) {
+    const values = [item.fach_original, item.subject_original, item.fach, item.subject].filter(Boolean).map(value => this._norm(value));
+    const own = [lesson.subject, lesson.fach].filter(Boolean).flatMap(value => { const key = this._norm(value); return [key, ...(aliases[key]?.matches || [])]; });
+    return values.some(value => own.includes(value));
+  }
+
+  _displaySubject(value, aliases, lesson) {
+    const target = this._norm(value);
+    if (target === this._norm(lesson.subject) && lesson.fach) return lesson.fach;
+    if (aliases[target]?.label) return aliases[target].label;
+    return String(value || lesson.fach || lesson.subject || "");
+  }
+
+  _subjectAliases(days) {
+    const aliases = {};
+    for (const day of days || []) for (const lesson of Array.isArray(day) ? day : []) {
+      const subject = this._norm(lesson.subject), fach = this._norm(lesson.fach);
+      if (!subject || !fach) continue;
+      const label = String(lesson.fach || lesson.subject).trim();
+      aliases[subject] = { matches: Array.from(new Set([...(aliases[subject]?.matches || []), subject, fach])), label };
+      aliases[fach] = { matches: Array.from(new Set([...(aliases[fach]?.matches || []), subject, fach])), label };
+    }
+    return aliases;
+  }
+
+  _context(hass, attrs) {
+    const plan = hass.states["sensor.vertretungsplan"], collegium = hass.states["sensor.kfg_kollegium"];
+    return { available: !!(plan || collegium), entries: this._entries(plan?.attributes || {}), teachers: collegium?.attributes?.lehrer && typeof collegium.attributes.lehrer === "object" ? collegium.attributes.lehrer : {}, childClass: String(attrs.klasse || "").trim() };
+  }
+
+  _entries(attributes) {
+    const result = [], walk = value => { if (Array.isArray(value)) return value.forEach(walk); if (!value || typeof value !== "object") return; if (this._looksLikeEntry(value)) result.push(value); Object.values(value).forEach(walk); };
+    walk(attributes); return result;
+  }
+
+  _looksLikeEntry(value) { return !!(value && (value.fach || value.fach_original || value.subject) && (value.stunde || value.datum || value.art || value.vertreter || value.lehrer_nach)); }
+
+  _active(lesson, week) {
+    const badge = lesson?.badge;
+    if (badge === null || badge === undefined || badge === "" || !week) return true;
+    const values = Array.isArray(badge) ? badge : String(badge).split(/[,;/|]+/);
+    return values.some(value => String(value).trim().toUpperCase() === week);
+  }
+
+  _lessonsAt(day, period) { return (Array.isArray(day) ? day : []).filter(lesson => { const index = Number(lesson?.index), duration = Math.max(1, Number(lesson?.duration) || 1); return Number.isFinite(index) && index <= period && period < index + duration; }); }
+  _spanFor(lessons, period) { const starting = lessons.filter(lesson => Number(lesson?.index) === period); return starting.length ? Math.max(1, ...starting.map(lesson => Number(lesson.duration) || 1)) : 1; }
+  _periodEnd(lesson) { const index = Number(lesson?.index), duration = Math.max(1, Number(lesson?.duration) || 1); return Number.isFinite(index) ? index + duration - 1 : 1; }
+
+  _buildSlots(days, maxPeriod) {
+    const byPeriod = new Map();
+    for (const day of days) for (const lesson of Array.isArray(day) ? day : []) {
+      const index = Number(lesson?.index), duration = Math.max(1, Number(lesson?.duration) || 1);
+      if (!Number.isFinite(index)) continue;
+      const start = this._timeToMinutes(lesson.start), end = this._timeToMinutes(lesson.end);
+      if (start !== null && end !== null && end > start && duration > 1) {
+        const length = (end - start) / duration;
+        for (let offset = 0; offset < duration; offset++) { const period = index + offset; if (!byPeriod.has(period)) byPeriod.set(period, { start: this._minutesToTime(start + length * offset), end: this._minutesToTime(start + length * (offset + 1)) }); }
+      } else if (!byPeriod.has(index)) byPeriod.set(index, { start: lesson.start || "", end: lesson.end || "" });
+    }
+    const slots = [];
+    for (let index = 1; index <= maxPeriod; index++) { const current = byPeriod.get(index) || { start: "", end: "" }; slots.push({ index, start: current.start, end: current.end }); }
+    return slots;
+  }
+
+  _timeToMinutes(value) { if (typeof value !== "string") return null; const match = value.trim().match(/^(\d{1,2}):(\d{2})/); return match ? Number(match[1]) * 60 + Number(match[2]) : null; }
+  _minutesToTime(value) { const minutes = Math.round(value); return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`; }
+
+  _dateMatch(item, date, dayIndex) {
+    if (!item?.datum) return false;
+    const value = String(item.datum).trim().toLowerCase();
+    const names = ["montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag"];
+    const weekdayIndex = names.indexOf(value);
+    if (weekdayIndex >= 0) return weekdayIndex === dayIndex + 1;
+    const match = value.match(/(\d{1,2})[.\/-](\d{1,2})(?:[.\/-](\d{2,4}))?/);
+    if (!match) return false;
+    if (Number(match[1]) !== date.getDate() || Number(match[2]) !== date.getMonth() + 1) return false;
+    return !match[3] || Number(match[3]) === date.getFullYear() || Number(match[3]) === date.getFullYear() % 100;
+  }
+
+  _period(value, lesson) {
+    if (!value || !lesson) return true;
+    const numbers = String(value).match(/\d+/g)?.map(Number).filter(number => number > 0 && number < 20) || [], index = Number(lesson.index);
+    if (!numbers.length || !Number.isFinite(index)) return true;
+    if (numbers.length === 2 && /[-–—]/.test(String(value))) { const range = []; for (let number = numbers[0]; number <= numbers[1]; number++) range.push(number); return range.includes(index); }
+    return numbers.includes(index);
+  }
+
+  _class(item, childClass) { if (!childClass || !item?.klasse) return false; const wanted = this._norm(childClass); return String(item.klasse).split(/[,;/|]+/).some(value => this._norm(value) === wanted); }
+
+  _teacher(value, map) {
+    if (!value) return "";
+    const raw = String(value).trim(), wanted = raw.toLocaleLowerCase("de-DE");
+    const key = Object.keys(map || {}).find(item => String(item).trim().toLocaleLowerCase("de-DE") === wanted);
+    return key ? map[key] : raw;
+  }
+
+  _className(value) { return this._norm(value).replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); }
+  _norm(value) { return String(value ?? "").trim().toLowerCase().replace(/ä/g, "a").replace(/ö/g, "o").replace(/ü/g, "u").replace(/ß/g, "ss").replace(/[^a-z0-9]+/g, ""); }
+  _monday(date) { const result = new Date(date.getFullYear(), date.getMonth(), date.getDate()), day = result.getDay(); result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day)); return result; }
+  _date(date) { return new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date); }
+
+  _findEntity(hass) {
+    const configured = this.config.sensor || this.config.entity;
+    if (configured && hass.states[configured]) return hass.states[configured];
+    if (!this.config.child) return hass.states["sensor.stundenplan"];
+    const wanted = String(this.config.child).toLowerCase();
+    return Object.values(hass.states).find(state => state.entity_id.startsWith("sensor.") && state.attributes?.kind_kürzel?.toString().toLowerCase() === wanted);
+  }
+
+  _esc(value) { const div = document.createElement("div"); div.textContent = String(value ?? ""); return div.innerHTML; }
+  getCardSize() { return 10; }
+  getGridOptions() { return { columns: "full", min_columns: 12, rows: 8, min_rows: 5 }; }
 }
-if(!customElements.get("kfg-stundenplan-grid-card"))customElements.define("kfg-stundenplan-grid-card",KfgStundenplanGridCard);
-window.customCards=window.customCards||[];if(!window.customCards.some(card=>card.type==="kfg-stundenplan-grid-card"))window.customCards.push({type:"kfg-stundenplan-grid-card",name:"KFG Stundenplan Raster (KFG Anpassung)",description:"Breiter Wochenstundenplan im Rasterformat mit KFG-Vertretungsplan"});
+
+if (!customElements.get("kfg-stundenplan-grid-card")) customElements.define("kfg-stundenplan-grid-card", KfgStundenplanGridCard);
+window.customCards = window.customCards || [];
+if (!window.customCards.some(card => card.type === "kfg-stundenplan-grid-card")) window.customCards.push({ type: "kfg-stundenplan-grid-card", name: "KFG Stundenplan Raster (KFG Anpassung)", description: "Breiter Wochenstundenplan im Rasterformat mit KFG-Vertretungsplan" });
