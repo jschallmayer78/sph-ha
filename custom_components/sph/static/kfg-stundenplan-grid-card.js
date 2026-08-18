@@ -32,6 +32,7 @@ class KfgStundenplanGridCard extends HTMLElement {
     const week = String(attrs.wochenkennung || "").trim().toUpperCase();
     const ctx = this._context(hass, attrs);
     const aliases = this._subjectAliases(sourceDays);
+    const calendarEvents = this._calendarEvents(hass);
     const monday = this._monday(new Date());
     const names = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
     const title = this.config.title || "";
@@ -51,7 +52,7 @@ class KfgStundenplanGridCard extends HTMLElement {
       day.map(lesson => this._periodEnd(lesson))
     ));
     const slots = this._buildSlots(days, maxPeriod);
-    const table = this._renderTable(days, names, slots, monday, week);
+    const table = this._renderTable(days, names, slots, monday, week, calendarEvents);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -93,6 +94,9 @@ class KfgStundenplanGridCard extends HTMLElement {
         .changed.change-pausenaufsicht { border-left-color: #009688; }
         .changed.change-sonderunterricht { border-left-color: #00acc1; }
         .changed.change-vertretung-ohne-lehrer { border-left-color: #607d8b; }
+        .calendar-event { display: inline-block; margin-top: 5px; padding: 3px 7px; border-radius: 6px; color: #fff; font-size: .74rem; font-weight: 700; line-height: 1.2; max-width: 100%; box-sizing: border-box; }
+        .calendar-arbeiten { background: var(--warning-color, #ff9800); }
+        .calendar-klausuren { background: var(--error-color, #e53935); }
         .cancelled { text-decoration: line-through; opacity: .62; }
         .empty { color: var(--secondary-text-color); }
         .error { padding: 16px; color: var(--error-color); }
@@ -101,7 +105,7 @@ class KfgStundenplanGridCard extends HTMLElement {
       <ha-card${header}><div class="table-wrap">${table}</div></ha-card>`;
   }
 
-  _renderTable(days, names, slots, monday, week) {
+  _renderTable(days, names, slots, monday, week, calendarEvents) {
     const covered = Array.from({ length: 5 }, () => new Set());
     let html = "<table><thead><tr><th>Stunde</th>";
 
@@ -121,8 +125,10 @@ class KfgStundenplanGridCard extends HTMLElement {
         const lessons = this._lessonsAt(days[dayIndex], slot.index);
         const span = this._spanFor(lessons, slot.index);
         for (let p = slot.index + 1; p < slot.index + span; p++) covered[dayIndex].add(p);
+        const date = new Date(monday);
+        date.setDate(date.getDate() + dayIndex);
         html += `<td${span > 1 ? ` rowspan="${span}"` : ""}>`;
-        html += lessons.length ? this._renderLessons(lessons) : '<span class="empty">–</span>';
+        html += lessons.length ? this._renderLessons(lessons, date, calendarEvents) : '<span class="empty">–</span>';
         html += "</td>";
       }
       html += "</tr>";
@@ -131,12 +137,66 @@ class KfgStundenplanGridCard extends HTMLElement {
     return html + "</tbody></table>";
   }
 
-  _renderLessons(lessons) {
+  _renderLessons(lessons, date, calendarEvents) {
     return `<div class="lessons">${lessons.map(lesson => {
       const changeClass = lesson.changeClass || "";
       const classes = [changeClass ? `changed ${changeClass}` : "", lesson.cancelled ? "cancelled" : ""].filter(Boolean).join(" ");
-      return `<div class="lesson ${classes}"><div class="subject">${this._esc(lesson.displaySubject || lesson.fach || lesson.subject || "Unterricht")}</div>${lesson.changeLabel ? `<span class="badge ${changeClass}">${this._esc(lesson.changeLabel)}</span>` : ""}<div class="teacher">${this._esc(lesson.displayTeacher || lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`;
+      const events = this._calendarEventsForLesson(calendarEvents, date, lesson);
+      return `<div class="lesson ${classes}"><div class="subject">${this._esc(lesson.displaySubject || lesson.fach || lesson.subject || "Unterricht")}</div>${lesson.changeLabel ? `<span class="badge ${changeClass}">${this._esc(lesson.changeLabel)}</span>` : ""}${events.map(event => `<span class="calendar-event ${event.cssClass}">${this._esc(event.summary)}</span>`).join("")}<div class="teacher">${this._esc(lesson.displayTeacher || lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`;
     }).join("")}</div>`;
+  }
+
+  _calendarEvents(hass) {
+    const entity = Object.values(hass.states).find(state => state.entity_id.startsWith("sensor.schulkalender_") && Array.isArray(state.attributes?.termine));
+    const events = entity?.attributes?.termine;
+    if (!Array.isArray(events)) return [];
+    return events.filter(event => ["arbeiten", "klausuren"].includes(this._norm(event.art)));
+  }
+
+  _calendarEventsForLesson(events, date, lesson) {
+    return events.filter(event => {
+      if (!this._eventOnDate(event, date)) return false;
+      const summary = this._norm(event.summary);
+      const subjects = [lesson.subject, lesson.fach, lesson.displaySubject].filter(Boolean).map(value => this._norm(value));
+      const subjectMatch = subjects.some(subject => subject && (summary.includes(subject) || this._subjectWordsMatch(summary, subject)));
+      if (subjectMatch) return true;
+      if (event.all_day || !lesson.start || !lesson.end) return false;
+      return this._eventOverlapsLesson(event, lesson);
+    });
+  }
+
+  _subjectWordsMatch(summary, subject) {
+    const words = String(subject).split(/\s+/).map(word => this._norm(word)).filter(word => word.length >= 2);
+    return words.length > 0 && words.every(word => summary.includes(word));
+  }
+
+  _eventOnDate(event, date) {
+    const start = this._dateValue(event.start), end = this._dateValue(event.end || event.start);
+    if (!start) return false;
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    return start < dayEnd && (end ? end > dayStart : start >= dayStart && start < dayEnd);
+  }
+
+  _eventOverlapsLesson(event, lesson) {
+    const start = this._dateValue(event.start), end = this._dateValue(event.end || event.start);
+    if (!start || !lesson.start || !lesson.end) return false;
+    const lessonStart = this._timeToMinutes(lesson.start), lessonEnd = this._timeToMinutes(lesson.end);
+    if (lessonStart === null || lessonEnd === null) return false;
+    const eventStart = start.getHours() * 60 + start.getMinutes();
+    const eventEnd = end ? end.getHours() * 60 + end.getMinutes() : eventStart;
+    return eventStart < lessonEnd && eventEnd > lessonStart;
+  }
+
+  _dateValue(value) {
+    if (!value) return null;
+    const raw = String(value).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+      const [year, month, day] = raw.split("-").map(Number);
+      return new Date(year, month - 1, day);
+    }
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   _applySubstitution(lesson, dayIndex, monday, ctx, aliases) {
