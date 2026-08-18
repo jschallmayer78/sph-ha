@@ -21,6 +21,8 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 CARD_URLS = (
     f"/api/{DOMAIN}/static/sph-stundenplan-card.js",
     f"/api/{DOMAIN}/static/sph-stundenplan-tag-card.js",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-card.js",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-tag-card.js",
 )
 
 
@@ -61,12 +63,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 
 async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Rename legacy generic sensor IDs to child-specific IDs.
-
-    Older versions created sensor.stundenplan and sensor.schulkalender because
-    the child was only stored as state attributes. Keep the same unique IDs but
-    move those registry entries to the child-specific object IDs.
-    """
+    """Rename legacy generic sensor IDs to child-specific IDs."""
     registry = er.async_get(hass)
     name = str(entry.data.get(CONF_CHILD_NAME, "")).strip()
     shortcut = str(entry.data.get(CONF_CHILD_SHORTCUT, "")).strip()
@@ -84,11 +81,7 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         if entity_id == desired:
             continue
         if registry.async_get(desired):
-            _LOGGER.warning(
-                "Kann %s nicht in %s umbenennen, da die Ziel-Entity bereits existiert",
-                entity_id,
-                desired,
-            )
+            _LOGGER.warning("Kann %s nicht in %s umbenennen, da die Ziel-Entity bereits existiert", entity_id, desired)
             continue
         registry.async_update_entity(entity_id, new_entity_id=desired)
         _LOGGER.info("SPH: Entity %s in %s umbenannt", entity_id, desired)
@@ -102,26 +95,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         await timetable.async_config_entry_first_refresh()
     except Exception as err:
-        _LOGGER.warning(
-            "Schulportal Hessen Stundenplan für %s aktuell nicht verfügbar: %s",
-            entry.title,
-            err,
-        )
+        _LOGGER.warning("Schulportal Hessen Stundenplan für %s aktuell nicht verfügbar: %s", entry.title, err)
 
     calendar = SphCalendarCoordinator(hass, entry, timetable.client)
     try:
         await calendar.async_config_entry_first_refresh()
     except Exception as err:
-        _LOGGER.warning(
-            "Schulportal Hessen Kalender für %s aktuell nicht verfügbar: %s",
-            entry.title,
-            err,
-        )
+        _LOGGER.warning("Schulportal Hessen Kalender für %s aktuell nicht verfügbar: %s", entry.title, err)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        "timetable": timetable,
-        "calendar": calendar,
-    }
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"timetable": timetable, "calendar": calendar}
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     await _migrate_sensor_entity_ids(hass, entry)
     return True
