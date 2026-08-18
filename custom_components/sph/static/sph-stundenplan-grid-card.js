@@ -16,6 +16,7 @@ class SphStundenplanGridCard extends HTMLElement {
     const entity = this._findEntity(hass);
     const attrs = entity?.attributes || {};
     const days = Array.isArray(attrs.eigener_plan) ? attrs.eigener_plan.slice(0, 5) : [];
+    const calendarEvents = this._calendarEvents(hass);
     const title = this.config.title || "";
     const header = title ? ` header="${this._esc(title)}"` : "";
     const names = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
@@ -29,7 +30,7 @@ class SphStundenplanGridCard extends HTMLElement {
       (Array.isArray(day) ? day : []).map(lesson => this._periodEnd(lesson))
     ));
     const slots = this._buildSlots(days, maxPeriod);
-    const table = this._renderTable(days, names, slots);
+    const table = this._renderTable(days, names, slots, calendarEvents);
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -49,6 +50,9 @@ class SphStundenplanGridCard extends HTMLElement {
         .subject { font-size:1.05rem; font-weight:700; }
         .teacher { margin-top:3px; font-size:.9rem; color:var(--secondary-text-color); }
         .badge { display:inline-block; margin-left:4px; padding:1px 6px; border-radius:999px; background:var(--primary-color); color:var(--text-primary-color); font-size:.75rem; font-weight:700; }
+        .calendar-event { display:inline-block; margin-top:5px; padding:3px 7px; border-radius:6px; font-size:.74rem; font-weight:700; line-height:1.2; max-width:100%; box-sizing:border-box; }
+        .calendar-arbeiten { background:var(--warning-color, #ff9800); color:#fff; }
+        .calendar-klausuren { background:var(--error-color, #e53935); color:#fff; }
         .empty { color:var(--secondary-text-color); }
         .error { padding:16px; color:var(--error-color); }
         @media (max-width:700px) { table{min-width:760px}.subject{font-size:.95rem} }
@@ -56,8 +60,9 @@ class SphStundenplanGridCard extends HTMLElement {
       <ha-card${header}><div class="table-wrap">${table}</div></ha-card>`;
   }
 
-  _renderTable(days, names, slots) {
+  _renderTable(days, names, slots, calendarEvents) {
     const covered = Array.from({ length:5 }, () => new Set());
+    const monday = this._monday(new Date());
     let html = "<table><thead><tr><th>Stunde</th>";
     names.forEach(name => { html += `<th>${this._esc(name)}</th>`; });
     html += "</tr></thead><tbody>";
@@ -70,15 +75,68 @@ class SphStundenplanGridCard extends HTMLElement {
         const lessons = this._lessonsAt(days[dayIndex], slot.index);
         const span = this._spanFor(lessons, slot.index);
         for (let p=slot.index+1; p<slot.index+span; p++) covered[dayIndex].add(p);
-        html += `<td${span>1 ? ` rowspan="${span}"` : ""}>${lessons.length ? this._renderLessons(lessons) : '<span class="empty">–</span>'}</td>`;
+        const date = new Date(monday);
+        date.setDate(date.getDate() + dayIndex);
+        html += `<td${span>1 ? ` rowspan="${span}"` : ""}>${lessons.length ? this._renderLessons(lessons, date, calendarEvents) : '<span class="empty">–</span>'}</td>`;
       }
       html += "</tr>";
     }
     return html + "</tbody></table>";
   }
 
-  _renderLessons(lessons) {
-    return `<div class="lessons">${lessons.map(lesson => `<div class="lesson"><div class="subject">${this._esc(lesson.fach || lesson.subject || "Unterricht")}${this._renderBadge(lesson.badge)}</div><div class="teacher">${this._esc(lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`).join("")}</div>`;
+  _renderLessons(lessons, date, calendarEvents) {
+    return `<div class="lessons">${lessons.map(lesson => {
+      const events = this._calendarEventsForLesson(calendarEvents, date, lesson);
+      return `<div class="lesson"><div class="subject">${this._esc(lesson.fach || lesson.subject || "Unterricht")}${this._renderBadge(lesson.badge)}</div>${events.map(event => `<span class="calendar-event ${event.cssClass}">${this._esc(event.summary)}</span>`).join("")}<div class="teacher">${this._esc(lesson.teacher || "")}${lesson.room ? ` <span>· Raum: ${this._esc(lesson.room)}</span>` : ""}</div></div>`;
+    }).join("")}</div>`;
+  }
+
+  _calendarEvents(hass) {
+    const entity = hass.states["sensor.schulkalender_maxim_mk"] || Object.values(hass.states).find(state => state.entity_id.startsWith("sensor.schulkalender_") && Array.isArray(state.attributes?.termine));
+    const events = entity?.attributes?.termine;
+    if (!Array.isArray(events)) return [];
+    return events.filter(event => ["arbeiten", "klausuren"].includes(this._norm(event.art)));
+  }
+
+  _calendarEventsForLesson(events, date, lesson) {
+    return events.filter(event => {
+      if (!this._eventOnDate(event, date)) return false;
+      const summary = this._norm(event.summary);
+      const subjects = [lesson.subject, lesson.fach].filter(Boolean).map(value => this._norm(value));
+      const subjectMatch = subjects.some(subject => subject && (summary.includes(subject) || this._subjectWordsMatch(summary, subject)));
+      if (subjectMatch) return true;
+      if (event.all_day || !lesson.start || !lesson.end) return false;
+      return this._eventOverlapsLesson(event, lesson);
+    });
+  }
+
+  _subjectWordsMatch(summary, subject) {
+    const words = String(subject).split(/\s+/).map(word => this._norm(word)).filter(word => word.length >= 2);
+    return words.length > 0 && words.every(word => summary.includes(word));
+  }
+
+  _eventOnDate(event, date) {
+    const start = this._dateValue(event.start), end = this._dateValue(event.end || event.start);
+    if (!start) return false;
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+    return start < dayEnd && (end ? end > dayStart : start >= dayStart && start < dayEnd);
+  }
+
+  _eventOverlapsLesson(event, lesson) {
+    const start = this._dateValue(event.start), end = this._dateValue(event.end || event.start);
+    if (!start || !lesson.start || !lesson.end) return false;
+    const lessonStart = this._timeToMinutes(lesson.start), lessonEnd = this._timeToMinutes(lesson.end);
+    if (lessonStart === null || lessonEnd === null) return false;
+    const eventStart = start.getHours() * 60 + start.getMinutes();
+    const eventEnd = end ? end.getHours() * 60 + end.getMinutes() : eventStart;
+    return eventStart < lessonEnd && eventEnd > lessonStart;
+  }
+
+  _dateValue(value) {
+    if (!value) return null;
+    const date = new Date(String(value));
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   _renderBadge(value) {
@@ -137,6 +195,9 @@ class SphStundenplanGridCard extends HTMLElement {
     const minutes=Math.round(value);
     return `${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(minutes%60).padStart(2,"0")}`;
   }
+
+  _monday(date) { const result = new Date(date.getFullYear(), date.getMonth(), date.getDate()); const day = result.getDay(); result.setDate(result.getDate() + (day === 0 ? -6 : 1 - day)); return result; }
+  _norm(value) { return String(value ?? "").trim().toLowerCase().replace(/ä/g,"a").replace(/ö/g,"o").replace(/ü/g,"u").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,""); }
 
   _findEntity(hass) {
     const configured=this.config.sensor||this.config.entity;
