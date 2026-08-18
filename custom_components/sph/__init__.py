@@ -13,7 +13,8 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
-from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, DOMAIN
+from .api.client import SphAuthClient
+from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, CONF_PASSWORD, CONF_SCHOOL_ID, CONF_USERNAME, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,8 +39,7 @@ async def _register_lovelace_resources(hass: HomeAssistant) -> None:
         resources.loaded = True
     items = resources.async_items() or []
     for url in CARD_URLS:
-        found = next((r for r in items if r.get("url", "").split("?", 1)[0] == url), None)
-        if found is None:
+        if not any(r.get("url", "").split("?", 1)[0] == url for r in items):
             await resources.async_create_item({"url": url, "res_type": "module"})
 
 
@@ -56,20 +56,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     else:
         async def _on_started(_event):
             await _register_lovelace_resources(hass)
-
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_started)
-
     return True
 
 
 async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Rename legacy generic sensor IDs to child-specific IDs."""
     registry = er.async_get(hass)
     name = str(entry.data.get(CONF_CHILD_NAME, "")).strip()
     shortcut = str(entry.data.get(CONF_CHILD_SHORTCUT, "")).strip()
     child = "_".join(part for part in (name, shortcut) if part)
     suffix = slugify(child) if child else "schulportal_hessen"
-
     for unique_id, prefix in (
         (f"{entry.entry_id}_timetable", "stundenplan"),
         (f"{entry.entry_id}_calendar", "schulkalender"),
@@ -84,26 +80,34 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
             _LOGGER.warning("Kann %s nicht in %s umbenennen, da die Ziel-Entity bereits existiert", entity_id, desired)
             continue
         registry.async_update_entity(entity_id, new_entity_id=desired)
-        _LOGGER.info("SPH: Entity %s in %s umbenannt", entity_id, desired)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    from .coordinator import SphTimetableCoordinator
     from .kalender.coordinator import SphCalendarCoordinator
+    from .stundenplan.coordinator import SphTimetableCoordinator
 
-    timetable = SphTimetableCoordinator(hass, entry)
+    auth = SphAuthClient(
+        entry.data[CONF_SCHOOL_ID],
+        entry.data[CONF_USERNAME],
+        entry.data[CONF_PASSWORD],
+    )
+    timetable = SphTimetableCoordinator(hass, entry, auth)
     try:
         await timetable.async_config_entry_first_refresh()
     except Exception as err:
         _LOGGER.warning("Schulportal Hessen Stundenplan für %s aktuell nicht verfügbar: %s", entry.title, err)
 
-    calendar = SphCalendarCoordinator(hass, entry, timetable.client)
+    calendar = SphCalendarCoordinator(hass, entry, auth)
     try:
         await calendar.async_config_entry_first_refresh()
     except Exception as err:
         _LOGGER.warning("Schulportal Hessen Kalender für %s aktuell nicht verfügbar: %s", entry.title, err)
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {"timetable": timetable, "calendar": calendar}
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
+        "auth": auth,
+        "timetable": timetable,
+        "calendar": calendar,
+    }
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
     await _migrate_sensor_entity_ids(hass, entry)
     return True
