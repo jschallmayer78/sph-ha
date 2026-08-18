@@ -1,5 +1,5 @@
 """Backward-compatible imports for the module coordinators."""
 
-from .stundenplan.coordinator import SphTimetableCoordinator
+from .module.stundenplan.coordinator import SphTimetableCoordinator
 
 __all__ = ["SphTimetableCoordinator"]
