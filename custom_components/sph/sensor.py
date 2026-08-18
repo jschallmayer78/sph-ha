@@ -1,7 +1,7 @@
 """Sensor platform dispatcher for the SPH modules."""
 
-from .kalender.sensor import SphCalendarSensor
-from .stundenplan.sensor import SphTimetableSensor
+from .module.kalender.sensor import SphCalendarSensor
+from .module.stundenplan.sensor import SphTimetableSensor
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
