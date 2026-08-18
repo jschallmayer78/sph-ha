@@ -22,8 +22,10 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 CARD_URLS = (
     f"/api/{DOMAIN}/static/sph-stundenplan-card.js",
     f"/api/{DOMAIN}/static/sph-stundenplan-tag-card.js",
+    f"/api/{DOMAIN}/static/sph-stundenplan-grid-card.js",
     f"/api/{DOMAIN}/static/kfg-stundenplan-card.js",
     f"/api/{DOMAIN}/static/kfg-stundenplan-tag-card.js",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-grid-card.js",
 )
 
 
