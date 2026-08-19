@@ -32,6 +32,15 @@ class SphStundenplanGridCard extends HTMLElement {
     const slots = this._buildSlots(days, maxPeriod);
     const table = this._renderTable(days, names, slots, calendarEvents);
 
+    // Keep the scroll container itself. Replacing it on every Home Assistant
+    // state update resets scrollLeft and makes horizontal scrolling jump back
+    // to the left on narrow screens.
+    const existingWrap = this.shadowRoot.querySelector(".table-wrap");
+    if (existingWrap) {
+      existingWrap.innerHTML = table;
+      return;
+    }
+
     this.shadowRoot.innerHTML = `
       <style>
         :host { display:block; width:100%; box-sizing:border-box; }
@@ -168,7 +177,7 @@ class SphStundenplanGridCard extends HTMLElement {
       const index = Number(lesson?.index), duration = Math.max(1, Number(lesson?.duration) || 1);
       if (!Number.isFinite(index)) continue;
       const start = this._timeToMinutes(lesson.start), end = this._timeToMinutes(lesson.end);
-      if (start !== null && end !== null && end > start && duration > 1) {
+      if (start !== null && end !== null && duration > 1) {
         const length = (end - start) / duration;
         for (let offset=0; offset<duration; offset++) {
           const period=index+offset;
