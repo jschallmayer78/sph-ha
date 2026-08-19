@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 import logging
 
-from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.config_entries import ConfigEntry
@@ -19,13 +18,14 @@ from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, CONF_PASSWORD, CONF_SCH
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+CARD_VERSION = "0.3.9"
 CARD_URLS = (
-    f"/api/{DOMAIN}/static/sph-stundenplan-card.js",
-    f"/api/{DOMAIN}/static/sph-stundenplan-tag-card.js",
-    f"/api/{DOMAIN}/static/sph-stundenplan-grid-card.js",
-    f"/api/{DOMAIN}/static/kfg-stundenplan-card.js",
-    f"/api/{DOMAIN}/static/kfg-stundenplan-tag-card.js",
-    f"/api/{DOMAIN}/static/kfg-stundenplan-grid-card.js",
+    f"/api/{DOMAIN}/static/sph-stundenplan-card.js?v={CARD_VERSION}",
+    f"/api/{DOMAIN}/static/sph-stundenplan-tag-card.js?v={CARD_VERSION}",
+    f"/api/{DOMAIN}/static/sph-stundenplan-grid-card.js?v={CARD_VERSION}",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-card.js?v={CARD_VERSION}",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-tag-card.js?v={CARD_VERSION}",
+    f"/api/{DOMAIN}/static/kfg-stundenplan-grid-card.js?v={CARD_VERSION}",
 )
 
 
@@ -39,10 +39,23 @@ async def _register_lovelace_resources(hass: HomeAssistant) -> None:
     if not getattr(resources, "loaded", True):
         await resources.async_load()
         resources.loaded = True
+
     items = resources.async_items() or []
     for url in CARD_URLS:
-        if not any(r.get("url", "").split("?", 1)[0] == url for r in items):
+        base_url = url.split("?", 1)[0]
+        existing = next(
+            (r for r in items if r.get("url", "").split("?", 1)[0] == base_url),
+            None,
+        )
+        if existing is None:
             await resources.async_create_item({"url": url, "res_type": "module"})
+            continue
+        if existing.get("url") != url or existing.get("type") != "module":
+            if hasattr(resources, "async_update_item"):
+                await resources.async_update_item(
+                    existing["id"],
+                    {"url": url, "res_type": "module"},
+                )
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
@@ -50,9 +63,11 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     await hass.http.async_register_static_paths(
         [StaticPathConfig(f"/api/{DOMAIN}/static", str(static_dir), False)]
     )
-    for url in CARD_URLS:
-        add_extra_js_url(hass, url)
 
+    # Lovelace resources are registered exactly once here. Do not also use
+    # add_extra_js_url(): doing both causes the same ES module to be evaluated
+    # twice, which can trigger CustomElementRegistry duplicate-definition
+    # errors in Safari/iOS.
     if hass.is_running:
         hass.async_create_task(_register_lovelace_resources(hass))
     else:
