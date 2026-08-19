@@ -54,6 +54,15 @@ class KfgStundenplanGridCard extends HTMLElement {
     const slots = this._buildSlots(days, maxPeriod);
     const table = this._renderTable(days, names, slots, monday, week, calendarEvents);
 
+    // Keep the scroll container itself. Replacing it on every Home Assistant
+    // state update resets scrollLeft and makes horizontal scrolling jump back
+    // to the left on narrow screens.
+    const existingWrap = this.shadowRoot.querySelector(".table-wrap");
+    if (existingWrap) {
+      existingWrap.innerHTML = table;
+      return;
+    }
+
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; width: 100%; box-sizing: border-box; }
