@@ -18,6 +18,7 @@ class SphTimetableCoordinator(DataUpdateCoordinator):
     def __init__(self, hass, entry, auth: SphAuthClient):
         self.entry = entry
         self.client = SphTimetableClient(auth)
+        self._last_successful_data = None
         super().__init__(
             hass,
             logger=_LOGGER,
@@ -27,9 +28,24 @@ class SphTimetableCoordinator(DataUpdateCoordinator):
             ),
         )
 
+    @property
+    def last_successful_data(self):
+        """Return the last successfully parsed timetable data."""
+        return self._last_successful_data
+
     async def _async_update_data(self):
         try:
-            return await self.hass.async_add_executor_job(self.client.get_timetable)
+            data = await self.hass.async_add_executor_job(self.client.get_timetable)
+            if not isinstance(data, dict) or not data:
+                raise ValueError("Stundenplan-Antwort enthält keine gültigen Daten.")
+
+            self._last_successful_data = data
+            return data
         except Exception as err:
-            # Keep the last successful coordinator data during short outages.
+            if self._last_successful_data is not None:
+                _LOGGER.warning(
+                    "SPH: Stundenplan konnte nicht aktualisiert werden (%s); "
+                    "letzte erfolgreich geladene Daten bleiben erhalten.",
+                    err,
+                )
             raise UpdateFailed(str(err)) from err
