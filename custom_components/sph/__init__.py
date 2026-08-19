@@ -18,8 +18,9 @@ from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, CONF_PASSWORD, CONF_SCH
 _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-CARD_VERSION = "0.3.10"
+CARD_VERSION = "0.3.11"
 CARD_URLS = (
+    f"/api/{DOMAIN}/static/grid-scroll-preserver.js?v={CARD_VERSION}",
     f"/api/{DOMAIN}/static/sph-stundenplan-card.js?v={CARD_VERSION}",
     f"/api/{DOMAIN}/static/sph-stundenplan-tag-card.js?v={CARD_VERSION}",
     f"/api/{DOMAIN}/static/sph-stundenplan-grid-card.js?v={CARD_VERSION}",
