@@ -23,7 +23,7 @@ class SphTimetableClient:
         return self.auth.session
 
     def get_timetable(self):
-        """Fetch the timetable and recover once from an expired session."""
+        """Fetch the timetable and recover once from an expired/broken session."""
         for attempt in range(2):
             try:
                 self.auth.login(force=attempt == 1)
@@ -57,9 +57,13 @@ class SphTimetableClient:
                     "own": self._parse(own_table) if own_table else [],
                     "klasse": self._extract_student_class(soup, response.url),
                 }
-            except RuntimeError:
+            except Exception as err:
                 if attempt == 0:
-                    _LOGGER.warning("SPH: Stundenplan-Abruf fehlgeschlagen; erneuere Anmeldung und versuche es erneut")
+                    _LOGGER.warning(
+                        "SPH: Stundenplan-Abruf fehlgeschlagen (%s); "
+                        "erneuere Anmeldung und versuche es erneut",
+                        err,
+                    )
                     continue
                 raise
 
