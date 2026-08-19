@@ -55,13 +55,22 @@ class SphTimetableSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_timetable"
         self._attr_name = f"Stundenplan {child_label(entry)}"
 
+    def _current_data(self):
+        """Return current data or the last successfully parsed timetable."""
+        return self.coordinator.data or self.coordinator.last_successful_data or {}
+
+    @property
+    def available(self):
+        """Keep the entity available when a refresh temporarily fails."""
+        return bool(self._current_data())
+
     @property
     def native_value(self):
-        return "verfügbar" if self.coordinator.data else "unbekannt"
+        return "verfügbar" if self._current_data() else "unbekannt"
 
     @property
     def extra_state_attributes(self):
-        data = self.coordinator.data or {}
+        data = self._current_data()
         return {
             "kind": self.entry.data.get(CONF_CHILD_NAME, ""),
             "kind_kürzel": self.entry.data.get(CONF_CHILD_SHORTCUT, ""),
