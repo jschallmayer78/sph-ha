@@ -4,6 +4,7 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ...const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT
+from .helpers import subject_overview
 
 
 def child_label(entry) -> str:
@@ -34,9 +35,16 @@ class SphMeinUnterrichtSensor(CoordinatorEntity, SensorEntity):
     @property
     def extra_state_attributes(self):
         tasks = self.coordinator.data or []
+        faecher = subject_overview(tasks)
         return {
+            "kind": self.entry.data.get(CONF_CHILD_NAME, ""),
+            "kind_kürzel": self.entry.data.get(CONF_CHILD_SHORTCUT, ""),
             "aufgaben": tasks,
             "anzahl": len(tasks),
             "unerledigt": sum(not task.get("erledigt", False) for task in tasks),
             "erledigt": sum(bool(task.get("erledigt", False)) for task in tasks),
+            "faecher": faecher,
+            "faecher_gesamt": len(faecher),
+            "faecher_offen": sum(1 for fach in faecher if fach["offen"]),
+            "attribution": "Schulportal Hessen",
         }

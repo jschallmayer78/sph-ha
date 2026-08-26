@@ -67,6 +67,15 @@ Termine enthalten unter anderem:
 
 `art` und `verantwortlich` bleiben erhalten und können später zur Filterung verwendet werden.
 
+### Mein Unterricht
+
+Der Sensor `sensor.mein_unterricht_...` gibt als Zustand die Anzahl der Einträge zurück. Neben der vollständigen Liste in `aufgaben` enthält er eine nach Fach gruppierte Übersicht:
+
+- `faecher` – ein Eintrag je Fach mit `fach`, `anzahl`, `offen`, `erledigt`, `status` (`offen`/`erledigt`), `lehrer`, `kurse`, `letzter_eintrag` und `offene_themen`. Sortiert nach offenen Einträgen, damit oben steht, was noch zu tun ist.
+- `faecher_gesamt` und `faecher_offen` – wie viele Fächer Einträge haben und in wie vielen davon noch etwas offen ist.
+
+Das Fach wird aus dem Kursnamen abgeleitet: Klassenbezeichnungen wie `05cG`, `7n` oder `5` fallen weg, Kürzel werden ausgeschrieben. Dadurch landen `D 05cG` und `Deutsch 7n` im selben Fach. Der ursprüngliche Kursname bleibt in `kurs` erhalten.
+
 ### Vertretungsplan
 
 Der Sensor `sensor.vertretungsplan_...` liest `vertretungsplan.php` und gibt als Zustand die Gesamtzahl der veröffentlichten Einträge zurück. Wichtige Attribute:
@@ -157,6 +166,22 @@ Optionen der Vertretungsplan-Karte:
 
 Ausfälle bekommen einen roten Balken und ein `Entfall`-Badge, Raumwechsel zeigen den alten Raum durchgestrichen daneben, und die „Allgemein"-Hinweise der Schule stehen über den Einträgen des jeweiligen Tages.
 
+Mein Unterricht:
+
+```yaml
+type: custom:sph-mein-unterricht-card
+entity: sensor.mein_unterricht_maxim_mk
+title: Mein Unterricht Maxim
+```
+
+| Option | Standard | Wirkung |
+| --- | --- | --- |
+| `entity` / `child` | – | Sensor des Kindes bzw. Name/Kürzel zum Suchen. |
+| `title` | – | Kartenüberschrift. |
+| `only_open` | `false` | Nur Fächer mit offenen Einträgen zeigen. |
+| `details` | `false` | Statt der offenen Themen die vollständigen Aufgabentexte anzeigen. |
+| `show_done` | `false` | Zusammen mit `details`: auch erledigte Einträge auflisten. |
+
 Tagesansicht:
 
 ```yaml
@@ -184,6 +209,8 @@ Die Parser-Tests laufen offline gegen ein Beispiel-HTML:
 python3 tests/test_vertretung_parser.py
 python3 tests/test_calendar_events.py
 node tests/test_vertretungsplan_card.js
+python3 tests/test_meinunterricht_overview.py
+node tests/test_mein_unterricht_card.js
 ```
 
 ## Verhalten bei Verbindungsproblemen
