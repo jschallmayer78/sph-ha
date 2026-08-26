@@ -9,7 +9,7 @@ Die Installation erfolgt einmalig als Integration **Schulportal Hessen**. Sie um
 In HACS das Repository hinzufügen:
 
 ```text
-https://github.com/leonsio/sph-ha
+https://github.com/jschallmayer78/sph-ha
 ```
 
 Kategorie: **Integration**.
