@@ -16,7 +16,8 @@ custom_components/sph/
 ├── api/
 │   ├── __init__.py
 │   ├── auth_client.py
-│   └── client.py
+│   ├── client.py
+│   └── subjects.py
 ├── module/
 │   ├── __init__.py
 │   ├── stundenplan/
@@ -48,6 +49,7 @@ Die Dateien direkt unter `custom_components/sph/` bilden die Integrations- und H
 - `const.py` – integrationsweite Konstanten.
 - `sensor.py` – Sensor-Dispatcher. Erzeugt die Sensoren aus den fachlichen Modulen und enthält selbst möglichst keine fachliche Datenverarbeitung.
 - `binary_sensor.py` – Dispatcher für die Binärsensoren des Vertretungsplan-Moduls.
+- `static/sph-mein-unterricht-card.js` – Lovelace-Karte für die Fächer-Übersicht aus Mein Unterricht.
 - `static/sph-vertretungsplan-card.js` – Lovelace-Karte für den Vertretungsplan. Liest ausschließlich die Sensor-Attribute; keine eigene Kommunikation mit SPH.
 - `calendar.py` – Dispatcher für die Kalender-Entity des Kalender-Moduls.
 - `coordinator.py` – Kompatibilitätsschicht für den Stundenplan-Coordinator; die eigentliche Implementierung befindet sich im Stundenplan-Modul.
@@ -62,6 +64,7 @@ Dazu zählen insbesondere:
 - Verwaltung der gemeinsamen HTTP-Kommunikation und Session.
 - Login-/Session-Verarbeitung.
 - Gemeinsame technische Hilfsfunktionen für die Kommunikation mit SPH.
+- `subjects.py` – Fachkürzel und ihre Langformen sowie die Ableitung des Fachs aus einem Kursnamen. Liegt hier, weil Stundenplan, Vertretungsplan und Mein Unterricht dieselbe Tabelle brauchen.
 
 Fachliche Verarbeitung soll nicht in `api/` abgelegt werden, wenn sie ausschließlich für ein einzelnes Modul benötigt wird.
 
@@ -105,7 +108,8 @@ Das Modul kapselt die fachliche Verarbeitung der Aufgaben aus „Mein Unterricht
 
 - `client.py` – Abruf von `meinunterricht.php` und Parsing der aktuellen Kurs-/Hausaufgabeneinträge.
 - `coordinator.py` – Home-Assistant DataUpdateCoordinator für die Aufgaben.
-- `sensor.py` – Sensorimplementierung mit Aufgabenliste und Erledigungsstatistik.
+- `sensor.py` – Sensorimplementierung mit Aufgabenliste, Erledigungsstatistik und Fächer-Übersicht.
+- `helpers.py` – Gruppierung der Einträge nach Fach inklusive Status je Fach.
 - `__init__.py` – Moduldefinition und öffentliche Modul-Schnittstellen.
 
 Das Datenmodell enthält insbesondere:

@@ -8,6 +8,7 @@ import re
 from bs4 import BeautifulSoup
 
 from ...api.client import SphAuthClient
+from ...api.subjects import subject_from_course
 from ...const import SPH_BASE
 
 _LOGGER = logging.getLogger(__name__)
@@ -141,13 +142,13 @@ class SphMeinUnterrichtClient:
 
     @staticmethod
     def _extract_subject(course: str) -> str:
-        # Course names are commonly "Deutsch 7n", "7c, 7n Ethik", etc.
-        # Keep the course text intact but provide a useful subject field.
-        value = course.strip()
-        if not value:
-            return ""
-        match = re.match(r"^(?:[^,]+,\s*)?(?:\d+[a-zA-Z]?\s+)?(.+?)(?:\s+\d+[a-zA-Z]?)?$", value)
-        return match.group(1).strip() if match else value
+        """Return the plain subject of a course name.
+
+        The raw course text stays available in ``kurs``; ``fach`` is what
+        entries are grouped by, so "D 05cG" and "Deutsch 7n" have to collapse
+        onto the same value.
+        """
+        return subject_from_course(course)
 
     @staticmethod
     def _extract_teacher_code(element) -> str:

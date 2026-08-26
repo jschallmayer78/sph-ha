@@ -4,7 +4,8 @@ from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from ...const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT
-from ..stundenplan.sensor import child_label, subject_name
+from ...api.subjects import subject_name
+from ..stundenplan.sensor import child_label
 from .helpers import entries_for, plan_days, today, tomorrow
 
 

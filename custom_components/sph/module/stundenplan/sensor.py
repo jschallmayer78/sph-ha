@@ -1,33 +1,10 @@
 from __future__ import annotations
 
-import re
-
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from ...api.subjects import SUBJECT_NAMES, subject_name  # noqa: F401  (re-exported)
 from ...const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT
-
-SUBJECT_NAMES = {
-    "M": "Mathematik", "D": "Deutsch", "E": "Englisch", "F": "Französisch", "L": "Latein",
-    "G": "Geschichte", "GE": "Geschichte", "EK": "Erdkunde", "POW": "Politik und Wirtschaft",
-    "PW": "Politik und Wirtschaft", "PH": "Physik", "CH": "Chemie", "BIO": "Biologie",
-    "SP": "Sport", "MU": "Musik", "ETH": "Ethik", "RKA": "Religion katholisch",
-    "REV": "Religion evangelisch", "RELI": "Religion", "INF": "Informatik", "KU": "Kunst",
-    "LRS": "Lese-Rechtschreib-Schwäche",
-}
-
-
-def subject_name(subject):
-    if not subject:
-        return subject
-    value = str(subject).strip()
-    match = re.match(r"^([A-Za-zÄÖÜäöü]+)(\d+)(.*)$", value)
-    if match:
-        code, number, suffix = match.groups()
-        base = SUBJECT_NAMES.get(code.upper())
-        if base:
-            return f"{base} {number}{suffix}"
-    return SUBJECT_NAMES.get(value.upper(), value)
 
 
 def enrich_days(days):
