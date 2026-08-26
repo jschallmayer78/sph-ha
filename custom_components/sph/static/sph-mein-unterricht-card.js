@@ -157,12 +157,13 @@ class SphMeinUnterrichtCard extends HTMLElement {
       .line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
       .name{font-weight:600}
       .badge{display:inline-flex;align-items:center;padding:1px 7px;border-radius:9px;font-size:.75rem;font-weight:600;white-space:nowrap}
-      .badge.open{background:var(--warning-color,#ff9800);color:#fff}
+      .badge.open{background:var(--error-color,#e53935);color:#fff}
+      .subject:not(.complete) .name{color:var(--error-color,#e53935)}
       .badge.done{background:var(--secondary-background-color);color:var(--secondary-text-color)}
       .meta{color:var(--secondary-text-color);font-size:.82rem;margin-top:2px}
-      .topics{color:var(--secondary-text-color);font-size:.85rem;font-style:italic;margin-top:4px}
-      .task{margin-top:6px;padding-left:9px;border-left:2px solid var(--divider-color)}
-      .task.is-done{opacity:.6}
+      .topics{color:var(--error-color,#e53935);font-size:.85rem;font-style:italic;margin-top:4px}
+      .task{margin-top:6px;padding-left:9px;border-left:2px solid var(--error-color,#e53935)}
+      .task.is-done{opacity:.6;border-left-color:var(--divider-color)}
       .task-head{font-size:.85rem}
       .task-body{color:var(--secondary-text-color);font-size:.82rem;white-space:pre-line;margin-top:1px}
       .empty{color:var(--secondary-text-color)}
