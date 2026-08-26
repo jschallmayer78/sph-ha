@@ -10,8 +10,10 @@ from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from .const import (
     CONF_CHILD_NAME,
     CONF_CHILD_SHORTCUT,
+    CONF_FIRST_LESSON,
     CONF_SCHOOL_ID,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_FIRST_LESSON,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
 )
@@ -55,6 +57,10 @@ class SphConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_UPDATE_INTERVAL,
                     default=values.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+                vol.Required(
+                    CONF_FIRST_LESSON,
+                    default=values.get(CONF_FIRST_LESSON, DEFAULT_FIRST_LESSON),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
             }
         )
 
@@ -94,6 +100,9 @@ class SphOptionsFlow(OptionsFlow):
                     CONF_USERNAME: user_input[CONF_USERNAME].strip(),
                     CONF_PASSWORD: user_input[CONF_PASSWORD],
                     CONF_UPDATE_INTERVAL: int(user_input[CONF_UPDATE_INTERVAL]),
+                    CONF_FIRST_LESSON: int(
+                        user_input.get(CONF_FIRST_LESSON, DEFAULT_FIRST_LESSON)
+                    ),
                 }
             )
 
@@ -138,5 +147,9 @@ class SphOptionsFlow(OptionsFlow):
                     CONF_UPDATE_INTERVAL,
                     default=values.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL),
                 ): vol.All(vol.Coerce(int), vol.Range(min=5, max=1440)),
+                vol.Required(
+                    CONF_FIRST_LESSON,
+                    default=values.get(CONF_FIRST_LESSON, DEFAULT_FIRST_LESSON),
+                ): vol.All(vol.Coerce(int), vol.Range(min=1, max=12)),
             }
         )

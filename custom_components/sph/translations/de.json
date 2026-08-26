@@ -10,7 +10,8 @@
           "school_id": "Schulnummer",
           "username": "Benutzername",
           "password": "Passwort",
-          "update_interval": "Aktualisierungsintervall (Minuten)"
+          "update_interval": "Aktualisierungsintervall (Minuten)",
+          "first_lesson": "Stunde für \"Erste Stunde entfällt\""
         }
       }
     },
@@ -31,7 +32,8 @@
           "school_id": "Schulnummer",
           "username": "Benutzername",
           "password": "Passwort",
-          "update_interval": "Aktualisierungsintervall (Minuten)"
+          "update_interval": "Aktualisierungsintervall (Minuten)",
+          "first_lesson": "Stunde für \"Erste Stunde entfällt\""
         }
       }
     },

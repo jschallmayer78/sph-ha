@@ -11,6 +11,8 @@ custom_components/sph/
 ├── const.py
 ├── coordinator.py
 ├── sensor.py
+├── binary_sensor.py
+├── calendar.py
 ├── api/
 │   ├── __init__.py
 │   ├── auth_client.py
@@ -45,6 +47,8 @@ Die Dateien direkt unter `custom_components/sph/` bilden die Integrations- und H
 - `config_flow.py` – Einrichtung und Konfiguration der Integration.
 - `const.py` – integrationsweite Konstanten.
 - `sensor.py` – Sensor-Dispatcher. Erzeugt die Sensoren aus den fachlichen Modulen und enthält selbst möglichst keine fachliche Datenverarbeitung.
+- `binary_sensor.py` – Dispatcher für die Binärsensoren des Vertretungsplan-Moduls.
+- `calendar.py` – Dispatcher für die Kalender-Entity des Kalender-Moduls.
 - `coordinator.py` – Kompatibilitätsschicht für den Stundenplan-Coordinator; die eigentliche Implementierung befindet sich im Stundenplan-Modul.
 
 ## `api/` – gemeinsame technische Funktionen
@@ -114,6 +118,26 @@ Das Datenmodell enthält insbesondere:
 
 Das Modul verwendet dieselbe authentifizierte SPH-Session wie Stundenplan und Kalender. Dadurch wird bei einer Aktualisierung nicht für jedes Modul ein eigener Login-Handshake benötigt.
 
+## `module/vertretung/`
+
+Das Modul kapselt die fachliche Verarbeitung des Vertretungsplans.
+
+- `client.py` – Abruf von `vertretungsplan.php` und Parsing der Tages-Panels. Zusätzlich steht `get_full_plan_for_day()` für den AJAX-Endpunkt (`a=my`, `ganzerPlan=true`) bereit, der den kompletten Plan eines Tages als JSON liefert.
+- `coordinator.py` – Home-Assistant DataUpdateCoordinator für den Vertretungsplan.
+- `sensor.py` – Sensorimplementierung mit Tagesliste, Tageszusammenfassungen und Hinweisen.
+- `binary_sensor.py` – Binärsensoren „Erste Stunde entfällt" für heute und morgen.
+- `helpers.py` – gemeinsame Auswertung der Plandaten für Sensor und Binärsensoren.
+- `__init__.py` – Moduldefinition und öffentliche Modul-Schnittstellen.
+
+Zum fachlichen Datenmodell gehören unter anderem:
+
+- Tages-Panels mit Datum, Wochentag, Relativangabe (`heute`/`morgen`) und Wochenkennung.
+- Einträge mit Stunde bzw. Stundenbereich, Klasse, Vertreter, Lehrkraft, Art, Fach, Raum und Hinweis.
+- Ein abgeleitetes `entfall`-Flag für Arten, bei denen kein Unterricht stattfindet.
+- Die „Allgemein"-Hinweise sowie Zeitpunkt der letzten Planänderung.
+
+Die Spaltenzuordnung erfolgt über das `data-field`-Attribut der Tabellenköpfe, weil das Schulportal keine feste Spaltenreihenfolge garantiert.
+
 ## Datenfluss
 
 Die fachliche Trennung folgt grundsätzlich diesem Ablauf:
@@ -136,10 +160,17 @@ custom_components/sph/__init__.py
       │                    ├── coordinator.py
       │                    └── sensor.py
       │
-      └──────────────► module/meinunterricht/
+      ├──────────────► module/meinunterricht/
+      │                    ├── client.py
+      │                    ├── coordinator.py
+      │                    └── sensor.py
+      │
+      └──────────────► module/vertretung/
                            ├── client.py
                            ├── coordinator.py
-                           └── sensor.py
+                           ├── helpers.py
+                           ├── sensor.py
+                           └── binary_sensor.py
 ```
 
 Der `sensor.py`-Dispatcher auf Integrationsebene verbindet die fachlichen Sensorimplementierungen mit Home Assistant. Die fachliche Logik bleibt in den jeweiligen Modulen.
@@ -151,8 +182,9 @@ Neue Funktionen sollen möglichst dort implementiert werden, wo sie fachlich hin
 1. **Nur Stundenplan:** `module/stundenplan/`
 2. **Nur Kalender:** `module/kalender/`
 3. **Nur Mein Unterricht:** `module/meinunterricht/`
-4. **Von mehreren Modulen benötigt:** `api/`
-5. **Nur Home-Assistant-Integration bzw. Konfiguration:** Ebene `custom_components/sph/`
+4. **Nur Vertretungsplan:** `module/vertretung/`
+5. **Von mehreren Modulen benötigt:** `api/`
+6. **Nur Home-Assistant-Integration bzw. Konfiguration:** Ebene `custom_components/sph/`
 
 Dadurch bleiben die fachlichen Module unabhängig voneinander und die gemeinsame API wird auf tatsächlich übergreifende Funktionen beschränkt.
 

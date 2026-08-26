@@ -10,7 +10,8 @@
           "school_id": "School ID",
           "username": "Username",
           "password": "Password",
-          "update_interval": "Update interval (minutes)"
+          "update_interval": "Update interval (minutes)",
+          "first_lesson": "Lesson used by the \"first lesson cancelled\" sensors"
         }
       }
     },
@@ -31,7 +32,8 @@
           "school_id": "School ID",
           "username": "Username",
           "password": "Password",
-          "update_interval": "Update interval (minutes)"
+          "update_interval": "Update interval (minutes)",
+          "first_lesson": "Lesson used by the \"first lesson cancelled\" sensors"
         }
       }
     },

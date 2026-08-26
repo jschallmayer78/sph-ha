@@ -13,7 +13,15 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from .api.client import SphAuthClient
-from .const import CONF_CHILD_NAME, CONF_CHILD_SHORTCUT, CONF_PASSWORD, CONF_SCHOOL_ID, CONF_USERNAME, DOMAIN
+from .const import (
+    CONF_CHILD_NAME,
+    CONF_CHILD_SHORTCUT,
+    CONF_PASSWORD,
+    CONF_SCHOOL_ID,
+    CONF_USERNAME,
+    DOMAIN,
+    PLATFORMS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -88,6 +96,7 @@ async def _migrate_sensor_entity_ids(hass: HomeAssistant, entry: ConfigEntry) ->
         (f"{entry.entry_id}_timetable", "stundenplan"),
         (f"{entry.entry_id}_calendar", "schulkalender"),
         (f"{entry.entry_id}_meinunterricht", "mein_unterricht"),
+        (f"{entry.entry_id}_vertretungsplan", "vertretungsplan"),
     ):
         entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
         if not entity_id:
@@ -105,6 +114,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from .module.kalender.coordinator import SphCalendarCoordinator
     from .module.meinunterricht.coordinator import SphMeinUnterrichtCoordinator
     from .module.stundenplan.coordinator import SphTimetableCoordinator
+    from .module.vertretung.coordinator import SphVertretungCoordinator
 
     auth = SphAuthClient(
         entry.data[CONF_SCHOOL_ID],
@@ -129,19 +139,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except Exception as err:
         _LOGGER.warning("Schulportal Hessen Mein Unterricht für %s aktuell nicht verfügbar: %s", entry.title, err)
 
+    vertretung = SphVertretungCoordinator(hass, entry, auth)
+    try:
+        await vertretung.async_config_entry_first_refresh()
+    except Exception as err:
+        _LOGGER.warning("Schulportal Hessen Vertretungsplan für %s aktuell nicht verfügbar: %s", entry.title, err)
+
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
         "auth": auth,
         "timetable": timetable,
         "calendar": calendar,
         "meinunterricht": meinunterricht,
+        "vertretung": vertretung,
     }
-    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _migrate_sensor_entity_ids(hass, entry)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    unloaded = await hass.config_entries.async_unload_platforms(entry, ["sensor"])
+    unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return unloaded

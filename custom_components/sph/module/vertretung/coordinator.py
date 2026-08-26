@@ -1,0 +1,53 @@
+from __future__ import annotations
+
+from datetime import timedelta
+import logging
+
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from ...api.client import SphAuthClient
+from ...const import CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .client import SphVertretungClient
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class SphVertretungCoordinator(DataUpdateCoordinator):
+    """Coordinator for the SPH substitution plan module."""
+
+    def __init__(self, hass, entry, auth: SphAuthClient):
+        self.entry = entry
+        self.client = SphVertretungClient(auth)
+        self._last_successful_data = None
+        super().__init__(
+            hass,
+            logger=_LOGGER,
+            name="Schulportal Hessen Vertretungsplan",
+            update_interval=timedelta(
+                minutes=int(entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL))
+            ),
+        )
+
+    @property
+    def last_successful_data(self):
+        """Return the last successfully parsed substitution plan."""
+        return self._last_successful_data
+
+    async def _async_update_data(self):
+        try:
+            data = await self.hass.async_add_executor_job(self.client.get_substitutions)
+            if not isinstance(data, dict):
+                raise ValueError("Vertretungsplan-Antwort enthält keine gültigen Daten.")
+
+            # An empty plan is a valid result (holidays, nothing scheduled), so
+            # only the structure is validated here.
+            self._last_successful_data = data
+            return data
+        except Exception as err:
+            if self._last_successful_data is not None:
+                _LOGGER.warning(
+                    "SPH: Vertretungsplan konnte nicht aktualisiert werden (%s); "
+                    "letzte erfolgreich geladene Daten bleiben erhalten.",
+                    err,
+                )
+            raise UpdateFailed(str(err)) from err
