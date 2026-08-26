@@ -1,17 +1,18 @@
 // Compatibility and shared week-selection logic for KFG timetable cards.
 //
 // KFG A/B week rules:
-// - A lesson whose badge matches the current week has priority over an
-//   unbadged fallback lesson at the same time.
-// - If no matching badge exists for a time slot, an unbadged lesson is used.
+// - A/B badges describe the week in which that lesson is active.
+// - An unbadged lesson is the counterpart/fallback for the other week when
+//   it shares a time slot with an explicitly badged lesson.
 // - A lesson with a non-matching badge is never shown.
 //
-// Examples for week A:
-//   A + unbadged -> A only
-//   A + B        -> A only
-//   A only       -> A
-//   B only       -> nothing
-// For week B, the same rules apply symmetrically.
+// Examples:
+//   A + unbadged -> week A: A only, week B: unbadged only
+//   B + unbadged -> week B: B only, week A: unbadged only
+//   A + B        -> week A: A only, week B: B only
+//   A only       -> week A: A, week B: nothing
+//   B only       -> week B: B, week A: nothing
+//   unbadged only -> shown in both weeks
 (() => {
   const CARD_TAGS = [
     "kfg-stundenplan-card",
@@ -57,16 +58,22 @@
     for (const key of order) {
       const group = groups.get(key) || [];
       const matching = group.filter((lesson) => badgeValues(lesson?.badge).includes(wanted));
+      const unbadged = group.filter((lesson) => badgeValues(lesson?.badge).length === 0);
+      const hasExplicitBadges = group.some((lesson) => badgeValues(lesson?.badge).length > 0);
 
       if (matching.length) {
-        // An explicit A/B lesson always wins over an unbadged fallback at
-        // the same time.
+        // Current week has an explicit lesson. It replaces an unbadged
+        // counterpart at this time slot.
         result.push(...matching);
-        continue;
+      } else if (hasExplicitBadges) {
+        // There are explicit A/B alternatives, but none for the current
+        // week. In this case an unbadged lesson is the counterpart for the
+        // other week. If there is no unbadged counterpart, the slot is empty.
+        result.push(...unbadged);
+      } else {
+        // Purely generic lesson: active in every week.
+        result.push(...unbadged);
       }
-
-      // No explicit lesson for this week: keep only the generic fallback.
-      result.push(...group.filter((lesson) => badgeValues(lesson?.badge).length === 0));
     }
 
     return result;
