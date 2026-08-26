@@ -82,7 +82,8 @@ const PLAN = {
           klasse: "05cG",
           vertreter: "NN",
           lehrer: "",
-          art: "Vertretung",
+          art: "Vertr",
+          art_lang: "Vertretung",
           fach: "ETH",
           fach_lang: "Ethik",
           raum: "Spie",
@@ -98,7 +99,8 @@ const PLAN = {
           klasse: "05cG",
           vertreter: "",
           lehrer: "MUE",
-          art: "Entfall",
+          art: "Entf.",
+          art_lang: "Entfall",
           fach: "M",
           fach_lang: "Mathematik",
           raum: "",
@@ -156,6 +158,8 @@ const states = {
   check("Stundenbereich 1.–2.", html.includes("1.–2."));
   check("Einzelstunde 5.", html.includes(">5.<"));
   check("Entfall markiert", html.includes('class="entry cancelled"') && html.includes('badge art out'));
+  check("Ausgeschriebene Art statt Kürzel", html.includes(">Vertretung<") && !html.includes(">Vertr<"));
+  check("Entfall durchgestrichen", html.includes(".entry.cancelled .subject{text-decoration:line-through"));
   check("Alter Raum durchgestrichen", html.includes('class="was">statt b302'));
   check("Hinweis der Schule", html.includes("Der Schulhof ist gesperrt."));
   check("Leerer Tag", html.includes("Keine Einträge"));

@@ -60,8 +60,8 @@ def main() -> int:
     check("Wochentag", heute["wochentag"], "Mittwoch")
     check("Relativ", heute["relativ"], "heute")
     check("Woche", heute["woche"], "A-Woche")
-    check("Einträge heute", heute["anzahl"], 2)
-    check("Entfälle heute", heute["entfaelle"], 1)
+    check("Einträge heute", heute["anzahl"], 3)
+    check("Entfälle heute", heute["entfaelle"], 2)
     check("Hinweise heute", heute["hinweise"], [
         "Der Schulhof ist wegen Bauarbeiten gesperrt.",
         "Die Mensa öffnet erst ab 12:00 Uhr.",
@@ -82,10 +82,25 @@ def main() -> int:
     check("Vertreter", second["vertreter"], "SCH")
     check("Raum", second["raum"], "B204")
     check("Kein Entfall", second["entfall"], False)
+    check("Abkürzung Vertr aufgelöst", second["art_lang"], "Vertretung")
+    check("Rohwert der Art bleibt erhalten", second["art"], "Vertr")
+
+    third = heute["eintraege"][2]
+    check("Abkürzung Entf. erkannt", third["art_lang"], "Entfall")
+    check("Abgekürzter Entfall zählt als Entfall", third["entfall"], True)
+    check("Stundenbereich 7-8", third["stunden"], [7, 8])
 
     morgen = days[1]
     check("Fach_alt gelesen", morgen["eintraege"][0]["fach_alt"], "D")
     check("Freisetzung ist Entfall", morgen["eintraege"][0]["entfall"], True)
+    check("Langform bleibt Langform", morgen["eintraege"][0]["art_lang"], "Freisetzung")
+
+    arten = SphVertretungClient._art_long
+    check("Betr", arten("Betr"), "Betreuung")
+    check("taus klein", arten("taus"), "Tausch")
+    check("Raum", arten("Raum"), "Raumänderung")
+    check("Unbekannte Art bleibt unverändert", arten("Wandertag"), "Wandertag")
+    check("Leere Art", arten(None), "")
 
     check("Leerer Tag ohne Einträge", days[2]["anzahl"], 0)
 
