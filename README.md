@@ -78,7 +78,10 @@ Der Sensor `sensor.vertretungsplan_...` liest `vertretungsplan.php` und gibt als
 - `aktualisiert` – Zeitpunkt der letzten Planänderung laut Schulportal
 - `wird_aktualisiert` – ob das Portal den Plan gerade neu aufbaut
 
-Jeder Eintrag enthält `stunde`, `stunden` (aufgelöster Bereich, z. B. `1 - 2` → `[1, 2]`), `von_stunde`, `bis_stunde`, `klasse`, `vertreter`, `lehrer`, `art`, `fach`, `fach_alt`, `raum`, `hinweis` sowie `entfall` – ein abgeleitetes Flag, das bei „Entfall", „Freisetzung", „EVA" und ähnlichen Arten gesetzt wird.
+Jeder Eintrag enthält `stunde`, `stunden` (aufgelöster Bereich, z. B. `1 - 2` → `[1, 2]`), `von_stunde`, `bis_stunde`, `klasse`, `vertreter`, `lehrer`, `art`, `fach`, `fach_alt`, `raum`, `hinweis` sowie zwei abgeleitete Felder:
+
+- `art_lang` – die ausgeschriebene Art. Schulen kürzen die Spalte ab (`Vertr`, `Entf.`, `Freis`); hier steht dann `Vertretung`, `Entfall`, `Freistunde`. Der Rohwert bleibt in `art` erhalten.
+- `entfall` – ob in dieser Stunde kein Unterricht stattfindet. Ausgewertet wird die aufgelöste Langform, damit `Entf` und `Entfall` gleich behandelt werden.
 
 Die Spalten werden anhand des `data-field`-Attributs der Tabellenköpfe zugeordnet, nicht anhand ihrer Position. Schulen, die Spalten anders anordnen oder weglassen, werden dadurch mitgelesen.
 

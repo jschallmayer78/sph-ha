@@ -30,15 +30,34 @@ COLUMN_FIELDS = {
     "Hinweis": "hinweis",
 }
 
-# ``Art`` values that mean "no lesson takes place".
-CANCELLATION_MARKERS = (
+# Schools abbreviate the ``Art`` column. The mapping follows the wording used
+# in the project documentation so that abbreviation and long form end up as the
+# same readable value.
+ART_NAMES = {
+    "betr": "Betreuung",
+    "vertr": "Vertretung",
+    "entf": "Entfall",
+    "taus": "Tausch",
+    "freis": "Freistunde",
+    "raum": "Raumänderung",
+    "statt-vertretung": "Statt-Vertretung",
+    "paus": "Pausenaufsicht",
+    "ses": "Sonderunterricht",
+    "vtr. ohne lehrer": "Vertretung ohne Lehrer",
+    "freisetzung": "Freisetzung",
+    "eva": "EVA",
+    "selbstlernzeit": "Selbstlernzeit",
+}
+
+# ``Art`` values that mean no lesson takes place. Compared against the resolved
+# long form, so "Entf" and "Entfall" are treated alike.
+CANCELLED_ARTEN = {
     "entfall",
-    "entfällt",
-    "fällt aus",
+    "freistunde",
     "freisetzung",
     "eva",
     "selbstlernzeit",
-)
+}
 
 LAST_UPDATED_PATTERN = re.compile(r"(\d{2}\.\d{2}\.\d{4}).{0,8}?(\d{2}:\d{2}(?::\d{2})?)")
 
@@ -216,12 +235,31 @@ class SphVertretungClient:
     @classmethod
     def _enrich(cls, entry: dict) -> dict:
         lessons = cls._parse_lessons(entry.get("stunde", ""))
-        art = (entry.get("art") or "").lower()
+        art_long = cls._art_long(entry.get("art"))
         entry["stunden"] = lessons
         entry["von_stunde"] = lessons[0] if lessons else None
         entry["bis_stunde"] = lessons[-1] if lessons else None
-        entry["entfall"] = any(marker in art for marker in CANCELLATION_MARKERS)
+        entry["art_lang"] = art_long
+        entry["entfall"] = art_long.lower() in CANCELLED_ARTEN
         return entry
+
+    @staticmethod
+    def _art_long(value) -> str:
+        """Resolve an abbreviated ``Art`` to its readable long form.
+
+        Matching is case-insensitive and also accepts a trailing dot, because
+        schools write "Entf", "entf." and "Entfall" for the same thing.
+        """
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        key = raw.lower().rstrip(".")
+        if key in ART_NAMES:
+            return ART_NAMES[key]
+        for name in ART_NAMES.values():
+            if key == name.lower():
+                return name
+        return raw
 
     @staticmethod
     def _parse_lessons(value: str) -> list[int]:

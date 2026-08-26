@@ -120,7 +120,7 @@ class SphVertretungsplanCard extends HTMLElement {
   _renderEntry(entry) {
     const cancelled = Boolean(entry.entfall);
     const subject = entry.fach_lang || entry.fach || "Unbekannt";
-    const art = cancelled ? "Entfall" : entry.art || "Änderung";
+    const art = entry.art_lang || entry.art || (cancelled ? "Entfall" : "Änderung");
 
     const details = [];
     if (entry.raum) {
@@ -198,6 +198,7 @@ class SphVertretungsplanCard extends HTMLElement {
       .body{flex:1;min-width:0}
       .line{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
       .subject{font-weight:600}
+      .entry.cancelled .subject{text-decoration:line-through;text-decoration-thickness:1px}
       .details{color:var(--secondary-text-color);font-size:.88rem;margin-top:2px}
       .was{text-decoration:line-through;opacity:.7}
       .hint{color:var(--secondary-text-color);font-size:.85rem;font-style:italic;margin-top:3px}
