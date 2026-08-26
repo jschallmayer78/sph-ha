@@ -48,6 +48,7 @@ Die Dateien direkt unter `custom_components/sph/` bilden die Integrations- und H
 - `const.py` – integrationsweite Konstanten.
 - `sensor.py` – Sensor-Dispatcher. Erzeugt die Sensoren aus den fachlichen Modulen und enthält selbst möglichst keine fachliche Datenverarbeitung.
 - `binary_sensor.py` – Dispatcher für die Binärsensoren des Vertretungsplan-Moduls.
+- `static/sph-vertretungsplan-card.js` – Lovelace-Karte für den Vertretungsplan. Liest ausschließlich die Sensor-Attribute; keine eigene Kommunikation mit SPH.
 - `calendar.py` – Dispatcher für die Kalender-Entity des Kalender-Moduls.
 - `coordinator.py` – Kompatibilitätsschicht für den Stundenplan-Coordinator; die eigentliche Implementierung befindet sich im Stundenplan-Modul.
 

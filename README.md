@@ -133,6 +133,27 @@ entity: sensor.stundenplan_maxim_mk
 title: Stundenplan Maxim
 ```
 
+Vertretungsplan:
+
+```yaml
+type: custom:sph-vertretungsplan-card
+entity: sensor.vertretungsplan_maxim_mk
+title: Vertretungsplan Maxim
+```
+
+Optionen der Vertretungsplan-Karte:
+
+| Option | Standard | Wirkung |
+| --- | --- | --- |
+| `entity` | – | Sensor des Kindes. Ohne Angabe wird über `child` gesucht, sonst der erste gefundene Vertretungsplan-Sensor genommen. |
+| `child` | – | Alternative zu `entity`: Name oder Kürzel des Kindes. |
+| `title` | – | Kartenüberschrift. |
+| `days` | alle | Maximale Anzahl angezeigter Tage. |
+| `hide_empty` | `false` | Tage ohne Einträge ausblenden. |
+| `only_cancellations` | `false` | Nur Ausfälle zeigen, Vertretungen und Raumwechsel ausblenden. |
+
+Ausfälle bekommen einen roten Balken und ein `Entfall`-Badge, Raumwechsel zeigen den alten Raum durchgestrichen daneben, und die „Allgemein"-Hinweise der Schule stehen über den Einträgen des jeweiligen Tages.
+
 Tagesansicht:
 
 ```yaml
@@ -159,6 +180,7 @@ Die Parser-Tests laufen offline gegen ein Beispiel-HTML:
 ```bash
 python3 tests/test_vertretung_parser.py
 python3 tests/test_calendar_events.py
+node tests/test_vertretungsplan_card.js
 ```
 
 ## Verhalten bei Verbindungsproblemen
